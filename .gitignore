@@ -1,0 +1,49 @@
+# .NET build and publish output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+/output/
+/publish/
+/artifacts/
+
+# Local tests, fixtures, and test reports
+/tests/
+[Tt]est[Rr]esults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+coverage*.xml
+*.lcov
+
+# IDE and user-specific settings
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.idea/
+*.pubxml.user
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+appsettings.*.local.json
+*.pfx
+*.p12
+
+# Reference documents and archives
+Docs/
+*.zip
+
+# Logs, temporary files, and OS caches
+*.log
+*.tmp
+*.bak
+__pycache__/
+.pytest_cache/
+.DS_Store
+Thumbs.db
+Desktop.ini

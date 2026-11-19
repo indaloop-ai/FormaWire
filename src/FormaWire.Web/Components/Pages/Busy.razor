@@ -1,0 +1,24 @@
+@page "/busy"
+@inject FormaWire.Web.Hosting.WebSettings Settings
+
+<PageTitle>Server occupato · FormaWire</PageTitle>
+<main class="service-page">
+    <span class="eyebrow">FORMAWIRE</span>
+    <h1>Server occupato</h1>
+    <p>Al momento tutte le sessioni sono in uso. Riprova tra poco.</p>
+    <a class="btn primary" href="@Settings.BaseHref" data-enhance-nav="false">Riprova</a>
+    <BrandFooter />
+</main>
+
+@code {
+    [CascadingParameter] public HttpContext? HttpContext { get; set; }
+    protected override void OnInitialized()
+    {
+        if (HttpContext is { Response.HasStarted: false })
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            HttpContext.Response.Headers.RetryAfter = "30";
+            HttpContext.Response.Headers.CacheControl = "no-store";
+        }
+    }
+}

@@ -1,0 +1,45 @@
+<svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  <path d="@Path" />
+</svg>
+
+@code {
+  [Parameter] public string Name { get; set; } = "select";
+  string Path => Name switch
+  {
+    "brand" => "M4 6h16L15 12l5 6H4l5-6-5-6Z M9 12h6",
+    "new" => "M12 5v14 M5 12h14",
+    "open" => "M3 8V5h6l2 3h10v3 M3 8v12h16l3-9H7l-4 9",
+    "save" => "M5 3h12l4 4v14H3V3h2Z M7 3v6h9V3 M7 21v-8h10v8",
+    "export" => "M12 3v12 M7 10l5 5 5-5 M4 15v6h16v-6",
+    "undo" => "M8 5 3 10l5 5 M3 10h11a6 6 0 0 1 6 6v3",
+    "redo" => "m16 5 5 5-5 5 M21 10H10a6 6 0 0 0-6 6v3",
+    "fit" => "M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5 M8 8h8v8H8Z",
+    "zoom" => "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6 M7 10h6 M10 7v6",
+    "cube" => "m12 3 9 5v9l-9 5-9-5V8l9-5Z M3 8l9 5 9-5 M12 13v9 M7.5 5.5l9 5",
+    "help" => "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M9.5 9a2.5 2.5 0 1 1 4 2l-1.5 1v1 M12 17h.01",
+    "select" => "m5 3 14 9-7 1-3 7-4-17Z",
+    "chain" => "m10 14 4-4 M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0 M16 8l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0",
+    "line" => "M5 19 19 5 M3 17h4v4H3Z M17 3h4v4h-4Z",
+    "arc" => "M4 20C4 9 9 4 20 4 M2 18h4v4H2Z M18 2h4v4h-4Z",
+    "circle" => "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M12 10v4 M10 12h4",
+    "move" => "M12 2v20 M2 12h20 M8 6l4-4 4 4 M8 18l4 4 4-4 M6 8l-4 4 4 4 M18 8l4 4-4 4",
+    "copy" => "M9 9h12v12H9Z M15 5V3H3v12h2",
+    "rotate" => "M20 8a9 9 0 1 0 1 7 M20 3v5h-5 M12 9v4l3 2",
+    "mirror" => "M12 2v3m0 3v3m0 3v3m0 3v2 M8 5 2 19h6V5Z M16 5l6 14h-6V5Z",
+    "scale" => "M3 13h8v8H3Z M3 9V3h18v18h-6 M13 11l7-7 M15 4h5v5",
+    "stretch" => "M8 6H3v12h5 M16 6h5v12h-5 M6 12h12 M14 8l4 4-4 4",
+    "align" => "M3 20h18 M4 15l15-9 M4 15V5 M8 8 4 4 1 8",
+    "trim" => "M4 4l16 16 M4 20 20 4 M3 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6 M3 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6",
+    "extend" => "M3 17h17 M20 3v18 M12 7l5 5-5 5 M3 12h14",
+    "break" => "M3 20 9 14 M15 8l6-6 M8 7l9 10 M6 9l4-4 M15 18l4-4",
+    "fillet" => "M4 21V12a8 8 0 0 1 8-8h9 M4 7V3h4",
+    "chamfer" => "M4 21V12l8-8h9 M4 7V3h4",
+    "offset" => "M3 17 17 3 M7 21 21 7 M8 8l8 8 M8 12V8h4 M12 16h4v-4",
+    "measure" => "m3 16 13-13 5 5L8 21l-5-5Z M7 12l3 3 M11 8l3 3 M15 4l3 3",
+    "origin" => "M12 2v5m0 10v5 M2 12h5m10 0h5 M12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12",
+    "chevron" => "m8 10 4 4 4-4",
+    "arrow" => "M4 12h16 M14 6l6 6-6 6",
+    "check" => "m5 12 4 4L19 6",
+    _ => "M4 4h16v16H4Z"
+  };
+}

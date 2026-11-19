@@ -1,0 +1,1264 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using System.Globalization
+@using FormaWire.Editing
+@using FormaWire.Geometry
+@using Microsoft.AspNetCore.Components.Forms
+@inject IJSRuntime JS
+@inject FormaWire.Web.Hosting.WebSettings Settings
+@implements IDisposable
+
+<PageTitle>FormaWire · Studio profili</PageTitle>
+
+<div class="app">
+  <div class="editor-shell" inert="@(ShowStart || ShowHelp)">
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark"><Icon Name="brand" /></span><span>FormaWire<small>STUDIO PROFILI</small></span></div>
+  <div class="toolbar" aria-label="File e cronologia">
+    <button class="btn" @onclick="NewDrawing" title="Nuovo disegno (Annulla recupera il precedente)"><Icon Name="new" />Nuovo</button>
+    <label class="btn file" title="Apri un disegno DXF"><Icon Name="open" />Apri file<InputFile OnChange="OnFile" accept=".dxf,.DXF" aria-label="Apri file DXF" /></label>
+    <button class="btn" @onclick="ExportDrawing" disabled="@(Doc.Entities.Count==0)" title="Salva il disegno con profili e parametri"><Icon Name="save" />Salva</button>
+    <span class="menu">
+      <button class="btn" @onclick="() => ShowExport = !ShowExport" aria-expanded="@(ShowExport.ToString().ToLowerInvariant())" disabled="@(Doc.Upper.Count==0 || Doc.Lower.Count==0)" title="Esporta i profili in DXF"><Icon Name="export" />Esporta<Icon Name="chevron" /></button>
+      @if (ShowExport)
+      {
+        <div class="menu-list" @onmouseleave="() => ShowExport = false">
+          <p class="export-warning">Verifica il profilo prima della lavorazione: FormaWire è fornito senza garanzia.</p>
+          @if (Doc.Profiles.Count > 1) { <label class="chk export-scope"><input type="checkbox" @bind="ExportAllProfiles" />Tutti i @Doc.Profiles.Count profili</label> }
+          <button @onclick="() => ExportAs(DxfContent.Deformed)" title="Layer XY / UV">Profili deformati <small>(da tagliare)</small></button>
+          <button @onclick="() => ExportAs(DxfContent.Undeformed)" title="Layer XY / UV — si riapre qui e negli altri CAD">Profili non deformati</button>
+          <button @onclick="() => ExportAs(DxfContent.Both)" title="Deformati su XY / UV, non deformati su XY_NOM / UV_NOM">Entrambi</button>
+        </div>
+      }
+    </span>
+    <span class="sep"></span>
+    <button class="btn" @onclick="Undo" disabled="@(!Doc.CanUndo)" title="Ctrl+Z"><Icon Name="undo" />Annulla</button>
+    <button class="btn" @onclick="Redo" disabled="@(!Doc.CanRedo)" title="Ctrl+Y"><Icon Name="redo" />Ripeti</button>
+    <span class="sep"></span>
+    <button class="btn" @onclick='() => JS.InvokeVoidAsync("editor.fitView")' title="Mostra tutto [F]"><Icon Name="fit" />Adatta vista</button>
+    <button class="btn" @onclick='() => JS.InvokeVoidAsync("editor.zoomSelection")' title="Zoom sulla selezione [Z]"><Icon Name="zoom" />Zoom selezione</button>
+    <button class="btn @(Mode3d?"on":"")" aria-pressed="@(Mode3d.ToString().ToLowerInvariant())" @onclick="Toggle3d" title="Vista tridimensionale dei profili e del filo"><Icon Name="cube" />Vista 3D</button>
+    @if (Mode3d) { <label class="chk"><input type="checkbox" checked="@Rulings" @onchange='e => { Rulings = (bool)e.Value!; JS.InvokeVoidAsync("editor.setRulings", Rulings); }' />filo</label>
+                   <button class="btn" @onclick='() => JS.InvokeVoidAsync("editor.resetView3d")'>Vista iniziale</button> }
+    <button class="btn quiet help" @onclick="() => ShowHelp = true" title="Come funziona [F1]"><Icon Name="help" />Guida</button>
+  </div>
+  </header>
+  <div class="tool-ribbon">
+    <select class="tool-group-select" aria-label="Gruppo di strumenti" @bind="ToolGroup">
+      @for (int g = 0; g < Tools.Length; g++) { <option value="@g">@ToolGroupNames[g]</option> }
+    </select>
+    <nav class="tool-tabs" aria-label="Gruppi di strumenti">
+      @for (int g = 0; g < Tools.Length; g++)
+      {
+        var group = g;
+        <button class="@(ToolGroup == group ? "on" : "")" aria-pressed="@((ToolGroup == group).ToString().ToLowerInvariant())" @onclick="() => ToolGroup = group">@ToolGroupNames[group]</button>
+      }
+    </nav>
+    <div class="tools" aria-label="Strumenti CAD">
+    @foreach (var t in Tools[ToolGroup])
+    {
+        var td = t;
+        <button class="btn tool-btn @(Tool==td.Key?"on":"")" aria-pressed="@((Tool==td.Key).ToString().ToLowerInvariant())" disabled="@Mode3d" @onclick="() => SetTool(td.Key)" title="@td.Tip"><Icon Name="@td.Key" />@td.Label @if (td.Shortcut.Length > 0) { <kbd>@td.Shortcut</kbd> }</button>
+        @if (td.Key == Tool)
+        {
+          @switch (Tool)
+          {
+            case "fillet": <label class="chk opt" title="Raggio del raccordo (0 = gli spigoli si incontrano esattamente)">R <input class="num" @bind="FilletR" size="4" /></label> break;
+            case "chamfer": <label class="chk opt" title="Misura dello smusso lungo ogni linea dallo spigolo: 0.5 = uguale sulle due; 0.5;1 = 0,5 sulla prima linea cliccata e 1 sulla seconda">D <input class="num" @bind="ChamferD" size="5" /> mm</label> break;
+            case "extend": <label class="chk opt" title="Vuoto = fino al prossimo elemento; un numero = allunga di quella misura (negativo accorcia)">di <input class="num" @bind="ExtendBy" size="4" placeholder="fino a…" /> mm</label> break;
+            case "offset": <label class="chk opt" title="Distanza tra l'elemento e la sua copia parallela">di <input class="num" @bind="OffsetD" size="4" /> mm</label>
+                           <label class="chk opt" title="Spunta: tutta la catena collegata (gli spigoli si chiudono da soli); senza: solo l'elemento cliccato"><input type="checkbox" @bind="OffsetChain" />tutta la catena</label> break;
+            case "mirror": <label class="chk opt" title="Spunta: gli elementi specchiati sono una copia, gli originali restano; senza: gli elementi si ribaltano"><input type="checkbox" @bind="MirrorKeep" />tieni l'originale</label> break;
+          }
+        }
+    }
+    @if (Doc.Selection.Count > 0)
+    {
+      <div class="selection-actions" role="group" aria-label="Azioni sulla selezione">
+        <span class="selection-count">@Doc.Selection.Count @(Doc.Selection.Count == 1 ? "selezionato" : "selezionati")</span>
+        <button class="btn" @onclick="Delete" title="Cancella gli elementi selezionati [Canc]">Cancella</button>
+        <button class="btn" @onclick="Isolate" title="Tieni solo la selezione">Isola</button>
+        <button class="btn" @onclick="() => { Doc.InvertSelection(); Refresh(); }" title="Seleziona gli altri elementi visibili">Inverti</button>
+        <button class="btn" @onclick="SetUpper" title="Gli elementi selezionati diventano il profilo utensile">Usa come XY</button>
+        <button class="btn" @onclick="SetLower" disabled="@(Doc.Upper.Count==0)" title="Gli elementi selezionati diventano il secondo profilo (stesso numero di elementi di XY)">Usa come UV</button>
+      </div>
+    }
+    <button class="btn origin-btn" @onclick="ToOrigin" disabled="@(Doc.Entities.Count==0 || Mode3d)" title="Porta il punto più a sinistra a X0 e il punto più alto a Y0"><Icon Name="origin" />Profilo all’origine</button>
+    <label class="chk connected" title="Gli elementi collegati seguono gli estremi spostati"><input type="checkbox" @bind="KeepConnected" />Mantieni collegati</label>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="canvas-col">
+      <div class="canvas-wrap"><canvas id="cv" tabindex="0" aria-label="Area di disegno CAD"></canvas>
+        <div class="canvas-document"><span>@(Doc.FileName ?? "Nuovo disegno")</span><small>@Doc.Entities.Count elementi · mm · @(Mode3d ? "3D" : "XY")</small></div>
+        @if (Doc.Entities.Count == 0 && _anchor is null)
+        {
+          <div class="canvas-empty"><Icon Name="line" /><strong>Il tuo prossimo profilo inizia qui</strong><span>Scegli Linea o Arco, oppure apri un file DXF.</span></div>
+        }
+        <div class="canvas-legend"><span><i class="legend-xy"></i>Profilo XY</span><span><i class="legend-uv"></i>Profilo UV</span>@if (Doc.Profiles.Any(p => p.Deformed is not null)) { <span><i class="legend-result"></i>Deformato</span> }</div>
+        <div class="canvas-tip">Rotella: zoom <span>·</span> Tasto destro: sposta vista <span>·</span> <kbd>F</kbd> adatta</div>
+      </div>
+      <div class="cmdbar">
+        <span class="prompt" title="@Prompt"><span class="prompt-mark">›</span><span>@Prompt</span></span>
+        <input id="cmd" class="cmd" @bind="Cmd" @bind:event="oninput" @onkeydown="CmdKey" autocomplete="off" spellcheck="false"
+               aria-label="Riga di comando" placeholder="Scrivi una misura, x,y o un comando…" title="Un numero = lunghezza; Tab = angolo; x,y = punto; @@dx,dy = punto relativo. Invio per confermare." />
+        <kbd class="command-enter">INVIO ↵</kbd>
+        @if (Status.Length > 0) { <span role="status" title="@Status" class="status @(StatusIsError ? "err" : "")">@Status</span> }
+      </div>
+      <div class="statusbar">
+        <span class="osnap">
+          <span class="snap-label">SNAP</span>
+          @foreach (var (key, label, name) in SnapKinds) { var k = key; <button class="tog @(Snaps[k]?"on":"")" aria-pressed="@(Snaps[k].ToString().ToLowerInvariant())" @onclick="() => ToggleSnap(k)" title="Snap ad oggetto: @name">@label</button> }
+          <button class="tog @(SnapsOn?"on":"")" aria-pressed="@(SnapsOn.ToString().ToLowerInvariant())" @onclick='() => OnKey("Snap")' title="Snap ad oggetto acceso/spento [F3]">OSNAP</button>
+          <button class="tog @(Polar?"on":"")" aria-pressed="@(Polar.ToString().ToLowerInvariant())" @onclick='() => OnKey("Polar")' title="Le linee si bloccano ogni 45° vicino al cursore [F10]">POLARE</button>
+          <button class="tog @(Ortho?"on":"")" aria-pressed="@(Ortho.ToString().ToLowerInvariant())" @onclick='() => OnKey("Ortho")' title="Solo orizzontale / verticale [F8]">ORTO</button>
+        </span>
+        <label class="grid-toggle" title="@(Mode3d ? "La griglia è disponibile nella vista 2D" : "Mostra o nascondi la griglia [F7]; gli snap restano invariati")">
+          <input type="checkbox" role="switch" aria-label="Mostra griglia 2D" aria-checked="@(Grid.ToString().ToLowerInvariant())" checked="@Grid" disabled="@Mode3d" @onchange='() => OnKey("Grid")' />
+          <span>Griglia 2D</span>
+        </label>
+        <span id="coords" class="coords"></span>
+      </div>
+    </div>
+
+    <aside class="panel" aria-label="Preparazione del profilo">
+      <div class="panel-heading"><h1>Prepara il profilo</h1><small>Passo @(ActiveStep + 1) di 4</small></div>
+      <div class="profile-controls" aria-label="Profili del disegno">
+        <select aria-label="Profilo attivo" value="@Doc.ActiveProfile.Id" @onchange="ChangeProfile">
+          @foreach (var profile in Doc.Profiles)
+          {
+            <option value="@profile.Id">@profile.Name @(profile.Deformed is not null ? "· calcolato" : profile.Upper.Count == 0 ? "· scegli XY" : "")</option>
+          }
+        </select>
+        <button class="btn" @onclick="AddProfile" disabled="@(Doc.Entities.Count == 0)" title="Aggiungi un profilo con spoglie e montaggio indipendenti">+ Profilo</button>
+      </div>
+      <details class="profile-details">
+        <summary>Nome e gestione · @Doc.Profiles.Count @(Doc.Profiles.Count == 1 ? "profilo" : "profili")</summary>
+        <div class="row"><input aria-label="Nome del profilo" maxlength="60" value="@Doc.ActiveProfile.Name" @onchange='e => Run(() => Doc.RenameProfile(e.Value?.ToString() ?? ""))' />
+          <button class="btn" @onclick="RemoveProfile" disabled="@(Doc.Profiles.Count == 1)" title="Rimuove questa configurazione; il disegno originale resta. Annulla la ripristina.">Rimuovi profilo</button></div>
+      </details>
+      <nav class="workflow-nav" aria-label="Passi di preparazione">
+        @for (int i = 0; i < StepNames.Length; i++)
+        {
+          var step = i;
+          <button class="@(ActiveStep == step ? "on" : "")" aria-current="@(ActiveStep == step ? "step" : null)" @onclick="() => SelectStep(step)"><span class="step-index @((NextStep < 0 || step < NextStep) ? "done" : "")">@(step + 1)</span>@StepNames[step]</button>
+        }
+      </nav>
+      <div class="panel-content">
+      @* ---------------------------------------------------------------- 1 drawing *@
+      <section class="step @(NextStep == 0 ? "next" : "")" hidden="@(ActiveStep != 0)" aria-label="@StepNames[0]">
+        <div class="step-head"><span class="num @(Doc.Entities.Count > 0 ? "ok" : "")">1</span><span class="step-title">Disegno</span>
+          @if (NextStep == 0) { <span class="badge">In corso</span> }
+          <small>@(Doc.FileName ?? (Doc.Entities.Count == 0 ? "apri un DXF" : "nuovo disegno")) · @Doc.Entities.Count elementi</small></div>
+        @if (ActiveStep == 0 && NextStep == 0) { <div class="step-what">Apri il disegno dell'utensile (o trascinalo nella finestra), oppure disegnalo con Linea, Arco, Raccorda…</div> }
+        @if (ActiveStep == 0)
+        {
+          <div class="step-body">
+            @foreach (var layer in Doc.Layers)
+            {
+              var l = layer;
+              <div class="row">
+                <input type="checkbox" checked="@(!Doc.HiddenLayers.Contains(l))" @onchange="e => ToggleLayer(l, (bool)e.Value!)" title="Mostra / nascondi" />
+                <span class="swatch" style="background:@Scene.ColorOf(l)"></span>
+                <button class="link-button" @onclick="() => { Doc.SelectLayer(l); Refresh(); }" title="Seleziona tutto il layer">@l</button>
+                <small>@Doc.Entities.Count(e => e.Layer.Equals(l, StringComparison.OrdinalIgnoreCase))</small>
+              </div>
+            }
+            <div class="row" title="Unisce gli estremi più vicini della distanza indicata, toglie doppioni ed elementi di lunghezza zero, unisce le linee che si continuano. Lavora sulla selezione, o su tutto ciò che è visibile.">
+              <button class="btn" @onclick="Fix" disabled="@(Doc.Entities.Count==0)">Ripara disegno</button> interruzioni fino a <input class="num" @bind="FixTol" size="5" /> mm
+            </div>
+            <details>
+              <summary>Sposta · ruota · scala · allunga con valori</summary>
+              <div class="row">dx <input class="num" @bind="Dx" size="6" /> dy <input class="num" @bind="Dy" size="6" />
+                <button class="btn" @onclick="() => Run(() => MoveSel(new Vec2(Num(Dx), Num(Dy))))" disabled="@(Doc.Selection.Count==0)">Sposta sel.</button>
+                <button class="btn" @onclick="() => Run(() => Doc.MoveAll(new Vec2(Num(Dx), Num(Dy))))">Sposta tutto</button></div>
+              <div class="row">ruota sel. di <input class="num" @bind="RotDeg" size="5" />° attorno a (0,0)
+                <button class="btn" @onclick="() => Run(() => Doc.RotateSelected(Vec2.Zero, Num(RotDeg)))" disabled="@(Doc.Selection.Count==0)">Ruota</button></div>
+              <div class="row" title="Scala attorno a (0,0): 25.4 trasforma un disegno in pollici in millimetri, 0.1 un disegno fatto in scala 10:1">scala × <input class="num" @bind="ScaleK" size="5" />
+                <button class="btn" @onclick="() => Run(() => Doc.ScaleSelected(Vec2.Zero, Num(ScaleK)))" disabled="@(Doc.Selection.Count==0)">Scala sel.</button>
+                <button class="btn" @onclick="() => Run(() => Doc.ScaleAll(Num(ScaleK)), fit: true)" disabled="@(Doc.Entities.Count==0)">Scala tutto</button></div>
+              <div class="row">allunga gli estremi liberi di <input class="num" @bind="ExtendLen" size="5" /> mm <button class="btn" @onclick="() => Run(() => Doc.ExtendSelectedLines(Num(ExtendLen)))" disabled="@(Doc.Selection.Count==0)">Allunga</button></div>
+              <div class="row">tolleranza di catena <input class="num" @bind="ChainTol" size="6" /> mm</div>
+            </details>
+          </div>
+        }
+      </section>
+
+      @* ---------------------------------------------------------------- 2 profile *@
+      <section class="step @(NextStep == 1 ? "next" : "")" hidden="@(ActiveStep != 1)" aria-label="@StepNames[1]">
+        <div class="step-head"><span class="num @(Doc.Upper.Count > 0 && XyGap is null ? "ok" : "")">2</span><span class="step-title">Profilo utensile (XY)</span>
+          @if (NextStep == 1) { <span class="badge">In corso</span> }
+          <small>@(Doc.Upper.Count == 0 ? "non impostato" : $"{Doc.Upper.Count} elementi")</small></div>
+        @if (ActiveStep == 1 && NextStep == 1) { <div class="step-what">Indica quale contorno del disegno è il profilo da tagliare: diventa arancione.</div> }
+        @if (ActiveStep == 1)
+        {
+          <div class="step-body">
+            @if (Doc.Upper.Count == 0)
+            {
+              <div class="row"><button class="btn primary" @onclick='() => SetTool("pickxy")'>Scegli il profilo</button> <small>poi cliccalo nel disegno</small></div>
+              <div class="hint">La catena si ferma dove si incontrano più di due elementi: sistema quei punti (Taglia, Cancella) oppure seleziona i pezzi mancanti con Maiusc+clic e usa <i>Usa come XY</i>.</div>
+            }
+            else
+            {
+              var up = Doc.UpperProfile()!;
+              <div class="row"><small>@(up.IsClosed() ? "chiuso" : "aperto") · da @up.Start a @up.End · la freccia indica il verso</small></div>
+              @if (XyGap is { } gap) { <div class="warn">Interrotto prima dell'elemento @gap.Index in @gap.At (distanza @F(gap.Gap) mm): Ripara disegno, Estendi o Raccorda R0 in quel punto, poi sceglilo di nuovo.</div> }
+              <div class="row">
+                <button class="btn" @onclick='() => SetTool("pickxy")'>Scegli di nuovo</button>
+                <button class="btn" @onclick="() => Run(Doc.ReverseUpper)">Inverti verso</button>
+                <button class="btn" @onclick="MirrorProfile" title="Ribalta tutto il disegno attorno all'asse verticale al centro del profilo: un utensile destro diventa sinistro, nello stesso posto (materiale e spoglie seguono)">Specchia ↔</button>
+                @if (up.IsClosed()) { <button class="btn" @onclick='() => SetTool("startpt")' title="Clicca il punto del profilo da cui deve partire il filo">Punto di partenza</button> }
+              </div>
+              <div class="row">
+                <button class="btn" @onclick="ToOrigin" title="Il punto più a sinistra del profilo va a X0, il punto più alto a Y0 (tutto il disegno si sposta insieme)">⌖ Profilo → origine</button>
+                <button class="btn" @onclick='() => SetTool("origin")' title="Clicca un punto: diventa (0,0)">Punto → origine</button>
+              </div>
+              <div class="row" title="Linee dritte di entrata / uscita del filo dagli estremi del profilo, verso l'esterno e verso il basso, che finiscono a questa distanza oltre il profilo in X">
+                <label class="chk"><input type="checkbox" @bind="LeadIn" />entrata</label> <input class="num" @bind="LeadBeyond" size="3" />
+                <label class="chk"><input type="checkbox" @bind="LeadOut" />uscita</label> <input class="num" @bind="LeadBeyondOut" size="3" /> mm oltre il profilo a
+                <input class="num" @bind="LeadAngle" size="3" />° <button class="btn" @onclick="AddLeads" disabled="@up.IsClosed()">Aggiungi</button></div>
+            }
+          </div>
+        }
+      </section>
+
+      @* ---------------------------------------------------------------- 3 second profile *@
+      <section class="step @(NextStep == 2 ? "next" : "")" hidden="@(ActiveStep != 2)" aria-label="@StepNames[2]">
+        <div class="step-head"><span class="num @(Doc.Lower.Count > 0 && Doc.Lower.Count == Doc.Upper.Count && Doc.UvError is null ? "ok" : "")">3</span><span class="step-title">Secondo profilo (UV) · spoglie</span>
+          @if (NextStep == 2) { <span class="badge">In corso</span> }
+          <small>@(Doc.Upper.Count == 0 ? "" : Doc.UvMode == UvSource.Angles ? "da angoli" : "disegnato")</small></div>
+        @if (ActiveStep == 2 && NextStep == 2) { <div class="step-what">Il secondo profilo, a 5 mm sotto, dà le spoglie: controlla gli angoli e la tabella.</div> }
+        @if (ActiveStep == 2)
+        {
+          <div class="step-body">
+            <div class="row" title="Distanza dal piano XY al piano UV. L'ufficio tecnico disegna a 5 mm anche su una placchetta da 10 mm (BA1360): contano gli angoli, qualsiasi profondità dà lo stesso utensile.">profondità UV <input class="num" @bind="Depth" @bind:after="ApplyRelief" size="5" /> mm <small>sotto XY</small></div>
+            <div class="seg">
+              <button class="@(Doc.UvMode==UvSource.Angles?"on":"")" @onclick="() => Run(Doc.UseAngles)" disabled="@(Doc.Upper.Count==0)">Da angoli</button>
+              <button class="@(Doc.UvMode==UvSource.Drawn?"on":"")" @onclick='() => SetTool("pickuv")' disabled="@(Doc.Upper.Count==0)" title="Scegli un secondo profilo già disegnato nel file">Disegnato</button>
+            </div>
+            @if (Doc.Upper.Count == 0) { <div class="hint">Prima imposta il profilo utensile (passo 2).</div> }
+            else if (Doc.UvMode == UvSource.Angles)
+            {
+              <div class="row grid2">
+                <span title="Sposta tutto il secondo profilo in Y di profondità·tan(angolo): −2° dà 2° di spoglia frontale in meno di quella del montaggio (da 8° a 6°)">correzione frontale</span>
+                <span><input class="num" @bind="Front" @bind:after="ApplyRelief" size="4" />° <small>@FrontText()</small></span>
+                <span title="Spoglia di ogni fianco (tagliente laterale), verso il materiale">spoglia laterale</span>
+                <span><input class="num" @bind="Side" @bind:after="ApplyRelief" size="4" />° <small>su ogni fianco</small></span>
+              </div>
+              <div class="row">direzione
+                <span class="seg small">
+                  <button class="@(!Doc.ReliefNormal?"on":"")" @onclick="() => SetNormal(false)" title="I fianchi si spostano in orizzontale, i lati frontali in verticale, di profondità·tan(angolo) qualunque sia la loro pendenza">orizzontale / verticale</button>
+                  <button class="@(Doc.ReliefNormal?"on":"")" @onclick="() => SetNormal(true)" title="Ogni elemento si sposta perpendicolare a sé stesso (raggi concentrici)">perpendicolare al lato</button>
+                </span>
+                <label class="chk" title="Il materiale si considera sotto il profilo (dentro, se chiuso); spunta se sta dall'altra parte"><input type="checkbox" @bind="Flip" @bind:after="ApplyRelief" />materiale sopra</label>
+              </div>
+              <details><summary>Come impostare spoglie e zone</summary><div class="hint">I lati frontali (entro 20° dall'orizzontale) raggiungono i fianchi; i raggi seguono le loro linee. Per modificare una zona, seleziona i suoi elementi nel disegno o con Maiusc+clic sulle righe. Usa la tabella per modificare un singolo elemento: <b>→</b> orizzontale, <b>↓</b> verticale, <b>⊥</b> perpendicolare. Angolo 0 = nessuna spoglia; negativo = lato opposto; vuoto = automatico.</div></details>
+            }
+            else
+            {
+              <div class="row">
+                <button class="btn" @onclick='() => SetTool("pickuv")'>Scegli nel disegno</button>
+                <button class="btn" @onclick="() => Run(Doc.CopyUpperToLower)" title="UV = copia di XY: poi nascondi XY e sposta i tratti (mantieni collegati) o trascina le maniglie">Copia XY e modifica</button>
+                <button class="btn" @onclick="() => Run(Doc.AdoptMeasuredAngles)" disabled="@(Doc.Lower.Count != Doc.Upper.Count)" title="Mette gli angoli misurati nei campi e ricostruisce il profilo UV da questi">Leggi gli angoli</button>
+              </div>
+              @if (Doc.MeasuredFrontDeg is { } mf) { <div class="row"><small>correzione frontale misurata: <b>@F(mf, "0.###")°</b> (spostamento in Y comune del profilo UV disegnato)</small></div> }
+            }
+            @if (Doc.UvError is { } err) { <div class="warn">@err</div> }
+            @foreach (var w in Doc.UvWarnings) { <div class="warn soft">@w</div> }
+            @if (Doc.Relief.Count > 0 && Doc.UvMode == UvSource.Angles && SelectedEdges() is { Count: > 0 } selEdges)
+            {
+              var nf = selEdges.Count(r => r.Auto.Kind == EdgeKind.Flank); var nfr = selEdges.Count(r => r.Auto.Kind == EdgeKind.Front);
+              <div class="region">
+                <div class="row"><b>@selEdges.Count elementi selezionati</b> <small>@nf fianchi, @nfr frontali, @(selEdges.Count - nf - nfr) raggi — i raggi seguono le loro linee</small></div>
+                <div class="row">fianchi <input class="num" @bind="RegionFlank" size="4" placeholder="—" />° · frontali <input class="num" @bind="RegionFront" size="4" placeholder="—" />° ·
+                  <select class="dir" @bind="RegionDir"><option value="">direzione invariata</option><option value="Horizontal">→ orizz.</option><option value="Vertical">↓ vert.</option><option value="Normal">⊥ perpend.</option></select></div>
+                <div class="row"><button class="btn primary" @onclick="ApplyRegion">Applica alla selezione</button>
+                  <button class="btn" @onclick="() => Run(() => Doc.SetRelief(selEdges.Select(r => r.Id), reset: true))">Torna automatico</button>
+                  <small>vuoto = lascia com'è</small></div>
+              </div>
+            }
+            @if (Doc.Relief.Count > 0)
+            {
+              <div class="table-scroll"><table class="relief">
+                <tr><th>#</th><th>elemento</th><th>mm</th><th>@(Doc.UvMode == UvSource.Angles ? "spoglia" : "misurata")</th>@if (Doc.UvMode == UvSource.Angles) { <th>direzione</th><th>angolo</th> }</tr>
+                @foreach (var r in Doc.Relief)
+                {
+                  var row = r; var (text, color) = Scene.Label(row, Doc.UvMode);
+                  <tr id="row-@row.Id" class="@(Doc.Selection.Contains(row.Id)?"sel":"") @(HoverId==row.Id?"hl":"")" @onmouseenter="() => HighlightRow(row.Id)" @onmouseleave="() => HighlightRow(-1)">
+                    <td class="pick" @onclick="e => PickRow(row.Id, e.ShiftKey)" title="Seleziona questo elemento (Maiusc: aggiungi / togli)">@row.Index</td><td class="pick" @onclick="e => PickRow(row.Id, e.ShiftKey)">@row.Kind</td><td>@F(row.Length, "0.###")</td>
+                    <td style="color:@color">@(text[(text.IndexOf(' ') + 1)..])</td>
+                    @if (Doc.UvMode == UvSource.Angles)
+                    {
+                      <td><select class="dir" value="@(row.Override?.Dir?.ToString() ?? "")" @onchange="e => SetDirection(row.Id, e.Value?.ToString())" title="Direzione della spoglia di questo elemento">
+                        <option value="">auto @DirMark(row.Auto.Dir)</option>
+                        <option value="Horizontal">→ orizz.</option>
+                        <option value="Vertical">↓ vert.</option>
+                        <option value="Normal">⊥ perpend.</option>
+                      </select></td>
+                      <td><input class="num" size="4" value="@(row.Override?.AngleDeg?.ToString("0.###", CultureInfo.InvariantCulture) ?? "")" placeholder="@F(row.Auto.AngleDeg, "0.###")" @onchange="e => SetOverride(row.Id, e.Value?.ToString())" /></td>
+                    }
+                  </tr>
+                }
+              </table></div>
+              @if (Doc.UvMode == UvSource.Angles && Doc.ReliefOverrides.Count > 0) { <div class="row"><button class="btn" @onclick="() => Run(Doc.ClearReliefOverrides)">Tutto automatico</button></div> }
+            }
+          </div>
+        }
+      </section>
+
+      @* ---------------------------------------------------------------- 4 deform *@
+      <section class="step deformation-step @(NextStep == 3 ? "next" : "")" hidden="@(ActiveStep != 3)" aria-label="@StepNames[3]">
+        <div class="step-head"><span class="num @(Doc.Deformed is not null ? "ok" : "")">4</span><span class="step-title">Deformazione</span>
+          @if (NextStep == 3) { <span class="badge">In corso</span> }
+          <small>@(Doc.Deformed is null ? "" : "fatta")</small></div>
+        @if (ActiveStep == 3 && NextStep == 3) { <div class="step-what">Scrivi come è montato l'utensile e premi Calcola deformazione, poi Esporta DXF.</div> }
+        @if (ActiveStep == 3)
+        {
+          <div class="step-body">
+            <div class="angle-fields">
+              <label class="field-label" for="mount-angle">Angolo di montaggio<span class="input-unit"><input id="mount-angle" inputmode="decimal" @bind="Mount" @bind:after="ApplyMounting" /><span>°</span></span><small>Inclinazione sull’attrezzo</small></label>
+              <label class="field-label" for="cut-angle">Angolo del tagliente<span class="input-unit"><input id="cut-angle" inputmode="decimal" @bind="InsertRot" @bind:after="ApplyMounting" /><span>°</span></span><small>Rispetto al montaggio</small></label>
+            </div>
+            <div class="angle-summary" aria-live="polite">
+              <div><span>Angolo totale</span><strong>@F(Doc.MountDeg + Doc.InsertRotDeg, "0.###")<small>°</small></strong></div>
+              <div><span>Fattore in Y</span><strong><small>× </small>@F(Doc.Mounting.ScaleY, "0.######")</strong></div>
+            </div>
+            @if (Doc.Lower.Count > 0 && Doc.Lower.Count == Doc.Upper.Count && ReliefSummary() is { Length: > 0 } rs) { <div class="hint">Secondo profilo: @rs</div> }
+            <div class="deform-actions">
+              <button class="btn primary full" @onclick="Deform" disabled="@(Doc.Upper.Count==0 || Doc.Lower.Count==0)" title="Calcola solo il profilo attivo">@(Doc.Profiles.Count > 1 ? "Calcola attivo" : Doc.Deformed is null ? "Calcola deformazione" : "Ricalcola deformazione")<Icon Name="arrow" /></button>
+              @if (Doc.Profiles.Count > 1)
+              {
+                <button class="btn full" @onclick="DeformAllProfiles" title="Calcola ogni profilo con i suoi angoli">Calcola tutti (@Doc.Profiles.Count)</button>
+              }
+            </div>
+            @if (Doc.Profiles.Count > 1)
+            {
+              <div class="hint">@Doc.Profiles.Count(p => p.Deformed is not null) / @Doc.Profiles.Count calcolati · impostazioni indipendenti.</div>
+            }
+            @if (Doc.Upper.Count == 0 || Doc.Lower.Count == 0) { <div class="hint prerequisite">Imposta i profili XY e UV per continuare.</div> }
+            <div class="export-options">
+              <p class="export-warning">Verifica il profilo prima della lavorazione: FormaWire è fornito senza garanzia.</p>
+              @if (Doc.Profiles.Count > 1) { <label class="chk export-scope"><input type="checkbox" @bind="ExportAllProfiles" />Tutti i @Doc.Profiles.Count profili</label> }
+              <span class="field-label">Contenuto del DXF</span>
+              <span class="seg">
+                <button class="@(ExportWhat==DxfContent.Deformed?"on":"")" aria-pressed="@((ExportWhat==DxfContent.Deformed).ToString().ToLowerInvariant())" @onclick="() => ExportWhat = DxfContent.Deformed" title="Profili XY / UV da tagliare">Deformato</button>
+                <button class="@(ExportWhat==DxfContent.Undeformed?"on":"")" aria-pressed="@((ExportWhat==DxfContent.Undeformed).ToString().ToLowerInvariant())" @onclick="() => ExportWhat = DxfContent.Undeformed" title="Profili originali XY / UV">Originale</button>
+                <button class="@(ExportWhat==DxfContent.Both?"on":"")" aria-pressed="@((ExportWhat==DxfContent.Both).ToString().ToLowerInvariant())" @onclick="() => ExportWhat = DxfContent.Both">Entrambi</button>
+              </span>
+              <button class="btn full" @onclick="Export" disabled="@(Doc.Upper.Count==0 || Doc.Lower.Count==0)"><Icon Name="export" />Esporta DXF</button>
+            </div>
+            @if (Doc.Deformed is { } d)
+            {
+              <div class="info">
+                <div>rosso = XY, blu = UV da tagliare@(d.Upper.Elements.Count(e => e is EllipseArcSeg) is int ne && ne > 0 ? $" · {ne} raggi → ellissi esatte" : "")</div>
+                @if (d.Upper.Elements.Any(e => e is PolylineSeg)) { <div class="warn">@d.Upper.Elements.Count(e => e is PolylineSeg) elementi solo approssimati (polilinea)</div> }
+                @foreach (var w in d.Warnings) { <div class="warn">@w</div> }
+              </div>
+            }
+            <details>
+              <summary>Avanzate</summary>
+              <div class="row grid2"><span title="Coordinata Y del perno della deformazione">perno Y</span><span><input class="num" @bind="PivotY" @bind:after="ApplyMounting" size="5" /> mm</span></div>
+              <div class="row"><label class="chk"><input type="checkbox" @bind="Flat" />scrivi UV a Z0</label></div>
+            </details>
+          </div>
+        }
+      </section>
+
+      </div>
+      <div class="step-navigation">
+        <button class="btn" disabled="@(ActiveStep == 0)" @onclick="() => SelectStep(ActiveStep - 1)">Indietro</button>
+        @if (ActiveStep < 3) { <button class="btn" @onclick="() => SelectStep(ActiveStep + 1)">@StepNames[ActiveStep + 1]<Icon Name="arrow" /></button> }
+        else { <span class="hint">@(Doc.Deformed is null ? "Calcola, poi esporta il DXF." : "Profili pronti per l’esportazione.")</span> }
+      </div>
+      @if (Doc.Selection.Count > 0)
+      {
+        var sel = Doc.Selected.ToList();
+        <details class="selbox"><summary>@sel.Count selezionati · Proprietà selezione</summary>
+          @if (sel.Count == 1)
+          {
+            var ent = sel[0]; var el = ent.Element;
+            <div class="row"><b>@EditorDocument.KindName(el) #@ent.Id</b> <small>layer @ent.Layer @Doc.ChainPosition(ent.Id)</small></div>
+            @if (el is LineSeg ln)
+            {
+              <div class="row grid"><span>inizio</span>X <input class="num" value="@F(ln.P0.X)" @onchange="e => EditEnd(ent.Id, true, e.Value, null)" />Y <input class="num" value="@F(ln.P0.Y)" @onchange="e => EditEnd(ent.Id, true, null, e.Value)" /></div>
+              <div class="row grid"><span>fine</span>X <input class="num" value="@F(ln.P1.X)" @onchange="e => EditEnd(ent.Id, false, e.Value, null)" />Y <input class="num" value="@F(ln.P1.Y)" @onchange="e => EditEnd(ent.Id, false, null, e.Value)" /></div>
+              <div class="row"><small>lunghezza @F(ln.ApproxLength) · angolo @F((ln.P1 - ln.P0).Angle * 180 / Math.PI)°</small></div>
+            }
+            else if (el is ArcSeg arc)
+            {
+              <div class="row"><small>centro @arc.Center · R @F(arc.Radius) · ampiezza @F(arc.Sweep * 180 / Math.PI)° · lunghezza @F(arc.ApproxLength)</small></div>
+              <div class="row"><small>da @arc.Start a @arc.End</small></div>
+            }
+            else { <div class="row"><small>@el · lunghezza @F(el.ApproxLength)</small></div> }
+          }
+          else
+          {
+            <div class="row"><b>@sel.Count selezionati</b> <small>@string.Join(", ", sel.GroupBy(e => EditorDocument.KindName(e.Element)).Select(g => $"{g.Count()} {g.Key.ToLowerInvariant()}")) · lunghezza totale @F(sel.Sum(e => e.Element.ApproxLength))</small></div>
+          }
+        </details>
+      }
+
+      <details class="logbox">
+        <summary>Registro <small>@Doc.Log.Count</small></summary>
+        <div class="log">@foreach (var l in Doc.Log.TakeLast(30).Reverse()) { <div>@l</div> }</div>
+      </details>
+      <BrandFooter />
+    </aside>
+  </div>
+
+  </div>
+  @if (ShowStart)
+  {
+    <div class="start" inert="@ShowHelp">
+      <div class="start-card">
+        <div class="start-head">
+          <div class="brand"><span class="brand-mark"><Icon Name="brand" /></span><span>FormaWire<small>STUDIO PROFILI</small></span></div>
+          <button class="btn quiet" @onclick="() => ShowHelp = true" title="Come funziona [F1]"><Icon Name="help" />Guida rapida</button>
+        </div>
+        <div class="start-intro"><span class="eyebrow">PRECISIONE, UN PASSO ALLA VOLTA</span><h1>Dal disegno.<br />Al profilo da tagliare.</h1><p>Prepara i profili XY e UV, definisci le spoglie e calcola la deformazione per l’elettroerosione a filo.</p></div>
+        <div class="start-choices">
+        <label class="dropzone" title="Trascina qui il file, oppure clicca per sceglierlo">
+          <InputFile OnChange="OnFile" accept=".dxf,.DXF" aria-label="Importa un disegno DXF" />
+          <span class="choice-icon"><Icon Name="open" /></span>
+          <span class="dz-main">Apri il tuo disegno</span>
+          <span class="dz-sub">Trascina qui il file o selezionalo dal computer.</span>
+          <span class="btn primary">Scegli un file<Icon Name="arrow" /></span>
+          <span class="file-types">DXF · MAX @Settings.MaxUploadMB MB</span>
+        </label>
+        <div class="blank-choice"><span class="choice-icon"><Icon Name="new" /></span><h2>Parti da un foglio vuoto</h2><p>Disegna con linee, archi e raccordi.<br />Ogni misura, sotto controllo.</p><button class="btn" @onclick="StartBlank">Inizia da zero<Icon Name="arrow" /></button><span class="file-types">STRUMENTI CAD INTEGRATI</span></div>
+        </div>
+        <p class="legal-notice">Usando FormaWire accetti i <a href="@(Settings.SiteUrl + "/formawire-termini")" target="_blank" rel="noopener noreferrer">Termini d'uso</a> · <a href="@(Settings.SiteUrl + "/privacy")" target="_blank" rel="noopener noreferrer">Privacy</a></p>
+        @if (StatusIsError && Status.Length > 0) { <div role="alert" class="warn start-err">@Status</div> }
+        <div class="start-flow">
+          <span><b>01</b> Importa o disegna</span><Icon Name="chevron" /><span><b>02</b> Scegli il profilo XY</span><Icon Name="chevron" /><span><b>03</b> Definisci le spoglie</span><Icon Name="chevron" /><span><b>04</b> Deforma ed esporta</span>
+        </div>
+        <BrandFooter />
+      </div>
+    </div>
+  }
+
+  @* a file dragged anywhere over the window: this layer appears and takes the drop *@
+  <div class="drop-overlay">
+    <InputFile OnChange="OnFile" accept=".dxf,.DXF" class="drop-input" />
+    <div class="drop-msg">Rilascia per aprire il disegno<small>DXF</small></div>
+  </div>
+
+  @if (ShowHelp)
+  {
+    <div class="modal-bg" @onclick="() => ShowHelp = false">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Guida di FormaWire" tabindex="-1" @onclick:stopPropagation="true">
+        <div class="modal-head">
+          <b>Guida di FormaWire</b>
+          <span class="tabs">
+            @foreach (var (key, title) in HelpTabs) { var k = key; <button class="@(HelpTab==k?"on":"")" @onclick="() => HelpTab = k">@title</button> }
+          </span>
+          <button class="close" @onclick="() => ShowHelp = false" title="Chiudi [Esc]">×</button>
+        </div>
+        <div class="modal-body">
+          @switch (HelpTab)
+          {
+            case "flusso":
+              <p>FormaWire prepara il profilo di un utensile da tagliare con l'elettroerosione a filo quando l'utensile è montato inclinato: dal disegno al profilo XY, poi il secondo profilo UV con le spoglie, poi la deformazione. I quattro pulsanti in cima al pannello destro restano sempre visibili: <b>Disegno</b>, <b>Profilo XY</b>, <b>Spoglie UV</b> e <b>Deforma / esporta</b>. Clicca un passo per aprire solo i suoi controlli; puoi anche usare i pulsanti in fondo per passare al precedente o al successivo. I valori restano impostati quando cambi passo. <span class="badge">In corso</span> indica il passo ancora da completare.</p>
+              <HelpFigure Kind="flusso" />
+              <h4>1 · Disegno</h4>
+              <p><b>Trascina</b> nella finestra il disegno dell'utensile in formato DXF, oppure usa <b>Apri file</b>. <b>Nuovo</b> torna alla pagina iniziale, dove puoi anche <b>iniziare da zero</b>: l'origine (0,0) è al centro e si disegna con Linea, Arco, Raccorda… Quote, tratteggi e testi vengono ignorati. Se il disegno ha piccole interruzioni o doppioni, <b>Ripara disegno</b> li sistema; gli spigoli si sistemano con <b>Taglia</b>, <b>Estendi</b> e <b>Raccorda</b>. I layer che non servono si nascondono con la spunta.</p>
+              <h4>Più profili nello stesso disegno</h4>
+              <p>Il selettore <b>Profilo attivo</b> in cima al pannello sceglie quale coppia XY/UV stai modificando. Con <b>+ Profilo</b> aggiungi una nuova configurazione e clicchi la sua catena nel disegno. Ogni profilo conserva profondità, spoglie (anche per singolo elemento) e angoli di montaggio indipendenti. Puoi rinominarlo in <b>Nome e gestione</b>; gli altri profili restano visibili con un tratto più leggero.</p>
+              <p>Nel passo 4, <b>Calcola tutti</b> elabora tutte le coppie. <b>Tutti i profili</b> esporta un unico DXF con layer separati; togli la spunta per esportare solo quello attivo. <b>Salva</b> conserva l'intero disegno e le impostazioni di ciascun profilo per riaprirle. Rimuovere una configurazione mantiene il suo disegno originale; <b>Annulla</b> la ripristina.</p>
+              <h4>2 · Profilo utensile (XY)</h4>
+              <p><b>Scegli il profilo</b> e clicca un suo elemento: tutta la catena collegata diventa il profilo XY (arancione). Se la catena si ferma dove si incontrano più elementi, sistema quel punto oppure seleziona i pezzi con Maiusc+clic e premi <b>Usa come XY</b>. Poi <b>⌖ Profilo → origine</b> (anche nella barra in alto): il punto più a sinistra del profilo va a X0, il punto più alto a Y0 — come li quota l'ufficio tecnico. Infine le linee di <b>entrata/uscita</b> del filo (di solito 45°, 1 mm oltre il profilo).</p>
+              <HelpFigure Kind="origine" />
+              <p><b>Specchia ↔</b> trasforma un utensile destro in sinistro; su un profilo chiuso <b>Punto di partenza</b> sceglie dove parte il filo.</p>
+              <h4>3 · Secondo profilo (UV) · spoglie</h4>
+              <p><b>Da angoli</b> (consigliato): scrivi la <b>correzione frontale</b> (−2° = da 8° a 6° di spoglia frontale) e la <b>spoglia laterale</b>; il profilo UV (azzurro) si costruisce da solo. Una zona con spoglia diversa (i denti, un lato) si seleziona con una finestra e si imposta nella barra verde. <b>Disegnato</b>: scegli un secondo profilo già disegnato nel file; i suoi angoli vengono misurati. I disegni sono nella scheda <a @onclick='() => HelpTab = "spoglie"'>Spoglie</a>.</p>
+              <h4>4 · Deformazione</h4>
+              <p>Due angoli dicono come sta l'utensile in macchina:</p>
+              <ul>
+                <li><b>angolo di montaggio</b> — di quanto è inclinato tutto l'utensile sull'attrezzo (la barretta; 8° sul nostro attrezzo);</li>
+                <li><b>angolo del tagliente</b> — di quanto è inclinato in più il tagliente rispetto al montaggio (la placchetta nella barretta; 0 se il tagliente è parallelo alla barretta).</li>
+              </ul>
+              <p>Il filo è verticale: con l'utensile inclinato di 8° + 6° = 14° il profilo, visto dal filo, è più corto in Y (× cos 14° / cos 6°). Nel passo 4 il riepilogo mostra l’angolo totale e il fattore in Y. <b>Calcola deformazione</b> mostra il risultato (rosso XY, blu UV); <b>Esporta DXF</b> scrive i profili deformati, quelli originali o entrambi.</p>
+              <p><b>Salva</b> (in alto) salva tutto il disegno con i profili e i parametri: riaprendolo ritrovi tutto com'era.</p>
+              break;
+            case "cad":
+              <p>La barra compatta in alto raccoglie gli strumenti nei gruppi <b>Seleziona</b>, <b>Disegna</b>, <b>Trasforma</b>, <b>Rifinisci</b> e <b>Misura</b>. Su finestre più strette scegli il gruppo dal menu a tendina. Le scorciatoie aprono anche il gruppo dello strumento scelto. Quando selezioni uno o più elementi, nella barra in alto compaiono <b>Cancella</b>, <b>Isola</b>, <b>Inverti</b>, <b>Usa come XY</b> e <b>Usa come UV</b>: nel gruppo <b>Seleziona</b> sono accanto a <b>Catena</b> e restano disponibili anche cambiando gruppo. Scompaiono quando la selezione è vuota. Per leggere le misure o modificare le coordinate, espandi <b>Proprietà selezione</b> in fondo al pannello destro.</p>
+              <HelpFigure Kind="strumenti" />
+              <table class="help-table">
+                <tr><td><b>Seleziona</b> <kbd>Esc</kbd></td><td>Clic su un elemento; Maiusc+clic aggiunge/toglie. Finestra da sinistra a destra = solo ciò che è tutto dentro; da destra a sinistra = anche ciò che tocca. Le <b>maniglie blu</b> agli estremi delle linee selezionate si trascinano (o clic sulla maniglia, poi clic sulla destinazione).</td></tr>
+                <tr><td><b>Catena</b> <kbd>C</kbd></td><td>Clic su un elemento: seleziona tutto ciò che è collegato, fino a una diramazione.</td></tr>
+                <tr><td><b>Linea</b> <kbd>L</kbd></td><td>Clic dopo clic (si continua dall'ultimo punto). Si blocca ogni 45°; scrivi la lunghezza e Invio; <kbd>Tab</kbd> per scrivere l'angolo. Invio o Esc per finire.</td></tr>
+                <tr><td><b>Arco</b> <kbd>A</kbd></td><td>Tre punti: inizio, un punto qualsiasi sull'arco, fine. L'anteprima segue il cursore. Per un raggio tra due linee usa invece <b>Raccorda</b>.</td></tr>
+                <tr><td><b>Cerchio</b> <code>CE</code></td><td>Centro, poi il raggio: scritto (es. <code>0.4</code>) o con un clic.</td></tr>
+                <tr><td><b>Sposta</b> <kbd>M</kbd></td><td>Seleziona prima. Punto base, poi destinazione (anche scritta). Con <i>mantieni collegati</i> le linee vicine si allungano per restare attaccate.</td></tr>
+                <tr><td><b>Copia</b> <kbd>K</kbd></td><td>Come Sposta, ma gli originali restano. Ogni clic fa un'altra copia dagli stessi originali; Esc o Invio per finire. Le copie di elementi del profilo vanno sul layer 0 (non fanno parte del profilo).</td></tr>
+                <tr><td><b>Ruota</b> <kbd>O</kbd></td><td>Seleziona prima. Centro, poi l'angolo: scritto, o con un clic.</td></tr>
+                <tr><td><b>Specchia</b> <kbd>I</kbd></td><td>Seleziona prima. Due punti dell'asse: si blocca ogni 45°, così un asse verticale o orizzontale viene da sé (o <kbd>Tab</kbd> e l'angolo, poi Invio). <i>Tieni l'originale</i>: specchia una copia — disegna metà profilo, specchiala, e hai il profilo simmetrico. Senza spunta gli elementi si ribaltano e restano nel profilo. Per ribaltare tutto l'utensile (destro ↔ sinistro) c'è <b>Specchia ↔</b> nel passo 2.</td></tr>
+                <tr><td><b>Scala</b> <code>SC</code></td><td>Seleziona prima. Il punto che resta fermo, poi scrivi il fattore: <code>2</code> doppio, <code>0.5</code> metà, <code>25.4</code> da pollici a millimetri. Per tutto il disegno: <i>Sposta · ruota · scala con valori</i> nel passo 1.</td></tr>
+                <tr><td><b>Stira</b> <kbd>S</kbd></td><td>Trascina una finestra attorno agli estremi da spostare, poi punto base e destinazione: le linee che attraversano la finestra si allungano.</td></tr>
+                <tr><td><b>Allinea</b> <code>AL</code></td><td>Clic su una linea che dovrebbe essere dritta: tutto il disegno (o la selezione) ruota attorno al suo inizio finché quella linea è orizzontale o verticale (la più vicina). Utile con i disegni arrivati storti.</td></tr>
+                <tr><td><b>Taglia</b> <kbd>T</kbd></td><td>Clic sulla parte da togliere: viene tagliata fino agli elementi che la attraversano.</td></tr>
+                <tr><td><b>Estendi</b> <kbd>E</kbd></td><td>Clic vicino all'estremità di una linea o di un arco: si allunga fino al prossimo elemento. Scrivi una lunghezza (es. <code>2</code>) per allungare di quella misura a ogni clic; negativa accorcia; <code>0</code> torna a "fino al prossimo elemento".</td></tr>
+                <tr><td><b>Spezza</b> <kbd>B</kbd></td><td>Clic dove dividere un elemento in due (gli snap funzionano: punto medio, intersezione…).</td></tr>
+                <tr><td><b>Raccorda</b> <kbd>R</kbd></td><td>Clic su due linee, sulla parte da tenere. R0: si incontrano esattamente nello spigolo; R &gt; 0: lo spigolo si arrotonda. Il raggio si scrive nella casella R o nella riga di comando.</td></tr>
+                <tr><td><b>Smusso</b> <code>SM</code></td><td>Come Raccorda, ma lo spigolo si taglia dritto: <code>0.5</code> = 0,5 mm su entrambe le linee (a 45° se sono a squadra), <code>0.5;1</code> = 0,5 sulla prima linea cliccata e 1 sulla seconda. Dentro il profilo lo smusso diventa un suo elemento.</td></tr>
+                <tr><td><b>Offset</b> <kbd>P</kbd></td><td>Copia parallela a una distanza: clic sull'elemento, poi dalla parte dove metterla. Con <i>tutta la catena</i> si copia tutto il profilo collegato e gli spigoli si chiudono da soli (le linee si allungano o si accorciano, i raggi crescono o calano). La copia resta selezionata.</td></tr>
+                <tr><td><b>Misura</b> <kbd>D</kbd></td><td>Due punti: distanza, ΔX, ΔY e angolo.</td></tr>
+                <tr><td><b>⌖ Profilo → origine</b></td><td>Il punto più a sinistra del profilo XY va a X0, il punto più alto a Y0; tutto il disegno si sposta insieme. Senza profilo XY usa la selezione, o tutto il disegno.</td></tr>
+                <tr><td><b>Ripara disegno</b></td><td>Unisce gli estremi più vicini della distanza indicata, toglie doppioni ed elementi di lunghezza zero, unisce le linee allineate. Sulla selezione o su tutto il visibile.</td></tr>
+                <tr><td><b>Specchia ↔</b> <small>(passo 2)</small></td><td>Ribalta tutto il disegno attorno all'asse verticale al centro del profilo: l'utensile destro diventa sinistro nello stesso posto; il lato del materiale e le spoglie seguono.</td></tr>
+                <tr><td><b>Punto di partenza</b> <small>(passo 2)</small></td><td>Solo per un profilo chiuso: clic sul punto del profilo da cui deve partire il filo (l'elemento lì viene diviso).</td></tr>
+                <tr><td><b>Annulla / Ripeti</b></td><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>: tutto si può annullare.</td></tr>
+              </table>
+              break;
+            case "snap":
+              <h4>Snap ad oggetto</h4>
+              <p>Mentre scegli un punto, il cursore si aggancia e un simbolo verde mostra dove: <b>FIN</b> estremo, <b>MED</b> punto medio, <b>CEN</b> centro di un arco, <b>INT</b> intersezione, <b>PER</b> perpendicolare (dal punto precedente), <b>VIC</b> punto più vicino sull'elemento, <b>ORI</b> l'origine (0,0), segnata sul disegno dalle due frecce rossa (X) e verde (Y). I pulsanti in basso li accendono uno per uno; <kbd>F3</kbd> li spegne tutti.</p>
+              <p><b>POLARE</b> <kbd>F10</kbd>: vicino a un multiplo di 45° la linea si blocca su quell'angolo. <b>ORTO</b> <kbd>F8</kbd>: solo orizzontale o verticale.</p>
+              <p>L’interruttore <b>Griglia 2D</b>, nella barra sotto il disegno, mostra o nasconde la griglia di riferimento; puoi anche premere <kbd>F7</kbd>. Spegnerla lascia visibili il disegno e gli assi, senza cambiare gli snap. Quando è visibile si adatta allo zoom e la misura di un quadretto compare in basso a sinistra. In 3D l’interruttore è disabilitato; tornando in 2D ritrovi la scelta precedente.</p>
+              <h4>Riga di comando</h4>
+              <p>Invece di cliccare puoi scrivere (basta iniziare a digitare una cifra nel disegno):</p>
+              <table class="help-table">
+                <tr><td><code>12.5</code></td><td>lunghezza nella direzione del cursore (o dell'angolo bloccato)</td></tr>
+                <tr><td><kbd>Tab</kbd> <code>30</code></td><td>blocca l'angolo a 30°; poi scrivi la lunghezza o clicca. <code>1.5</code> <kbd>Tab</kbd> <code>-90</code> Invio = 1,5 mm verso il basso</td></tr>
+                <tr><td><code>x,y</code> · <code>x;y</code></td><td>punto assoluto (con <code>;</code> puoi usare la virgola decimale: <code>1,5;2</code>)</td></tr>
+                <tr><td><code>@@dx,dy</code></td><td>punto relativo all'ultimo punto</td></tr>
+                <tr><td><code>@@lungh&lt;angolo</code></td><td>punto polare relativo</td></tr>
+                <tr><td><code>&lt;angolo</code></td><td>blocca l'angolo</td></tr>
+                <tr><td>un numero</td><td>in Raccorda è il raggio, in Smusso la misura, in Offset la distanza, in Ruota l'angolo, in Scala il fattore, in Cerchio il raggio, in Estendi la lunghezza</td></tr>
+                <tr><td>comandi</td><td><code>L</code> linea, <code>A</code> arco, <code>CE</code> cerchio, <code>SP</code>/<code>M</code> sposta, <code>CP</code> copia, <code>RU</code> ruota, <code>MI</code> specchia, <code>SC</code> scala, <code>ST</code> stira, <code>AL</code> allinea, <code>TA</code> taglia, <code>ES</code> estendi, <code>SPE</code> spezza, <code>RA</code> raccorda, <code>SM</code> smusso, <code>OF</code> offset, <code>DI</code> misura, <code>CA</code> catena, <code>U</code> annulla</td></tr>
+              </table>
+              break;
+            case "spoglie":
+              <p>Il <b>secondo profilo (UV)</b> sta sotto il profilo XY alla <b>profondità UV</b> (di solito 5 mm): il filo va da un punto di XY al suo corrispondente su UV, e la differenza tra i due dà le spoglie. Contano gli angoli, non la profondità.</p>
+              <HelpFigure Kind="spoglia-sezione" />
+              <h4>Da angoli</h4>
+              <ul>
+                <li><b>Correzione frontale</b>: sposta tutto il profilo UV in Y. Con l'angolo di montaggio di 8° la spoglia frontale è 8°; −2° la porta a 6° (+0,1746 mm su 5 mm, come in BA1408).<HelpFigure Kind="correzione-frontale" /></li>
+                <li><b>Spoglia laterale</b>: va su ogni <b>fianco</b>, verso il materiale (sotto un profilo aperto, dentro uno chiuso; <i>materiale sopra</i> la inverte).</li>
+                <li><b>Direzione</b>: <i>orizzontale / verticale</i> (predefinita, come l'ufficio tecnico): i fianchi si spostano in X, i lati frontali in Y, di profondità·tan(angolo) qualunque sia la pendenza. <i>Perpendicolare al lato</i>: ogni elemento si sposta perpendicolare a sé stesso (i raggi restano concentrici).<HelpFigure Kind="spoglia-direzione" /></li>
+                <li>Ruoli automatici, scritti sul disegno: le linee entro 20° dall'orizzontale sono <b>frontali</b> (senza spoglia propria: si accorciano o allungano per raggiungere i fianchi), gli archi tangenti a due linee sono <b>raggi</b> (seguono le linee), il resto sono <b>fianchi</b>.</li>
+                <li><b>Zone</b>: seleziona gli elementi di una zona (finestra nel disegno o Maiusc+clic sulle righe) e scrivi nella barra verde l'angolo dei <i>fianchi</i>, dei <i>frontali</i> e la direzione. Esempio BA1360: spoglia laterale 1°, poi i denti con fianchi 0°, il lato d'uscita con fianchi 0,5°.</li>
+                <li><b>Un elemento</b>: la sua riga nella tabella. Angolo 0 = nessuna spoglia, negativo = dall'altra parte, vuoto = automatico.</li>
+              </ul>
+              <h4>Disegnato</h4>
+              <p>Scegli un secondo profilo già disegnato (stesso numero di elementi di XY), oppure <b>Copia XY e modifica</b> e spostalo a mano. Le sue spoglie e la correzione frontale vengono misurate; <b>Leggi gli angoli</b> le mette nei campi e passa a "Da angoli".</p>
+              break;
+            case "tasti":
+              <table class="help-table">
+                <tr><td>rotella</td><td>zoom sul cursore</td></tr>
+                <tr><td>tasto centrale o destro trascinato · <kbd>Spazio</kbd>+trascina</td><td>sposta la vista</td></tr>
+                <tr><td><kbd>F</kbd> · <kbd>Z</kbd></td><td>mostra tutto · zoom sulla selezione</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>annulla il comando in corso, poi torna a Seleziona, poi svuota la selezione</td></tr>
+                <tr><td><kbd>Invio</kbd></td><td>finisce la linea o le copie in corso</td></tr>
+                <tr><td><kbd>Canc</kbd> · <kbd>Ctrl+A</kbd></td><td>cancella la selezione · seleziona tutto</td></tr>
+                <tr><td><kbd>Ctrl+Z</kbd> · <kbd>Ctrl+Y</kbd></td><td>annulla · ripeti</td></tr>
+                <tr><td><kbd>L</kbd> <kbd>A</kbd> <kbd>M</kbd> <kbd>K</kbd> <kbd>O</kbd> <kbd>I</kbd> <kbd>S</kbd></td><td>Linea, Arco, Sposta, Copia, Ruota, Specchia, Stira</td></tr>
+                <tr><td><kbd>T</kbd> <kbd>E</kbd> <kbd>B</kbd> <kbd>R</kbd> <kbd>P</kbd> <kbd>D</kbd> <kbd>C</kbd></td><td>Taglia, Estendi, Spezza, Raccorda, Offset, Misura, Catena (gli altri dalla riga di comando: <code>CE</code> cerchio, <code>SC</code> scala, <code>AL</code> allinea, <code>SM</code> smusso)</td></tr>
+                <tr><td><kbd>F1</kbd> · <kbd>F3</kbd> · <kbd>F7</kbd> · <kbd>F8</kbd> · <kbd>F10</kbd></td><td>guida · snap · mostra/nascondi griglia 2D · orto · polare</td></tr>
+                <tr><td>trascinare un file</td><td>un DXF trascinato nella finestra si apre (il disegno di prima torna con Annulla)</td></tr>
+                <tr><td>vista <b>3D</b></td><td>trascina = ruota, destro = sposta, rotella = zoom, clic = seleziona. Le linee grigie sono il filo tra gli elementi accoppiati: un abbinamento sbagliato si vede subito.</td></tr>
+              </table>
+              break;
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>
+
+@code {
+  sealed record ToolDef(string Key, string Label, string Shortcut, string Tip);
+  static readonly ToolDef[][] Tools =
+  {
+    new ToolDef[] { new("select", "Seleziona", "Esc", "Clic, Maiusc+clic, o finestra (da sinistra a destra: dentro; da destra a sinistra: anche ciò che tocca). Trascina una maniglia blu per spostare un estremo."),
+                    new("chain", "Catena", "C", "Clic su un elemento: seleziona tutto ciò che è collegato") },
+    new ToolDef[] { new("line", "Linea", "L", "Clic sui punti (snap, si blocca ogni 45°); scrivi una lunghezza, Tab per l'angolo, o x,y / @dx,dy / @lungh<angolo; Invio o Esc per finire"),
+                    new("arc", "Arco", "A", "Tre punti: inizio, un punto sull'arco, fine"),
+                    new("circle", "Cerchio", "", "Centro, poi il raggio (scritto o con un clic)  [CE]") },
+    new ToolDef[] { new("move", "Sposta", "M", "Seleziona prima, poi punto base e destinazione"),
+                    new("copy", "Copia", "K", "Seleziona prima, poi punto base e destinazione; ogni clic fa un'altra copia, Esc per finire"),
+                    new("rotate", "Ruota", "O", "Seleziona prima, poi il centro e l'angolo (scritto o con un clic)"),
+                    new("mirror", "Specchia", "I", "Seleziona prima, poi due punti dell'asse (si blocca ogni 45°: verticale e orizzontale vengono da sé)"),
+                    new("scale", "Scala", "", "Seleziona prima, poi il punto che resta fermo e il fattore (2 = doppio, 0.5 = metà, 25.4 = da pollici a mm)  [SC]"),
+                    new("stretch", "Stira", "S", "Trascina una finestra attorno agli estremi da spostare, poi punto base e destinazione: le linee che attraversano la finestra si allungano"),
+                    new("align", "Allinea", "", "Clic su una linea: il disegno (o la selezione) ruota attorno al suo inizio finché la linea è orizzontale o verticale  [AL]") },
+    new ToolDef[] { new("trim", "Taglia", "T", "Clic sulla parte da togliere; ogni elemento visibile fa da limite"),
+                    new("extend", "Estendi", "E", "Clic vicino all'estremità di una linea o di un arco: si allunga fino al prossimo elemento, o della lunghezza scritta"),
+                    new("break", "Spezza", "B", "Clic dove dividere un elemento in due (gli snap funzionano)"),
+                    new("fillet", "Raccorda", "R", "Clic su due linee dalla parte da tenere: R0 le fa incontrare esattamente, R>0 arrotonda lo spigolo"),
+                    new("chamfer", "Smusso", "", "Clic su due linee dalla parte da tenere: lo spigolo si taglia dritto alla misura D  [SM]"),
+                    new("offset", "Offset", "P", "Clic su un elemento, poi dalla parte dove mettere la copia parallela (di tutta la catena, se spuntato)") },
+    new ToolDef[] { new("measure", "Misura", "D", "Due punti: distanza, ΔX, ΔY e angolo") },
+  };
+  static readonly (string Key, string Label, string Name)[] SnapKinds =
+    { ("end", "FIN", "estremo"), ("mid", "MED", "punto medio"), ("cen", "CEN", "centro"), ("int", "INT", "intersezione"), ("perp", "PER", "perpendicolare"), ("near", "VIC", "vicino"), ("orig", "ORI", "origine (0,0)") };
+  static readonly (string Key, string Title)[] HelpTabs =
+    { ("flusso", "Come si lavora"), ("spoglie", "Spoglie"), ("cad", "Strumenti CAD"), ("snap", "Snap e riga di comando"), ("tasti", "Mouse e tasti") };
+  static readonly Dictionary<string, string> Aliases = new(StringComparer.OrdinalIgnoreCase)
+  {
+    ["L"] = "line", ["LINEA"] = "line", ["LINE"] = "line",
+    ["M"] = "move", ["SP"] = "move", ["SPOSTA"] = "move", ["MOVE"] = "move",
+    ["RU"] = "rotate", ["RUOTA"] = "rotate", ["RO"] = "rotate", ["ROTATE"] = "rotate",
+    ["ST"] = "stretch", ["STIRA"] = "stretch", ["S"] = "stretch", ["STRETCH"] = "stretch",
+    ["TA"] = "trim", ["TAGLIA"] = "trim", ["TR"] = "trim", ["TRIM"] = "trim",
+    ["ES"] = "extend", ["ESTENDI"] = "extend", ["EX"] = "extend", ["EXTEND"] = "extend",
+    ["SPE"] = "break", ["SPEZZA"] = "break", ["BR"] = "break", ["BREAK"] = "break",
+    ["RA"] = "fillet", ["RACCORDA"] = "fillet", ["RACCORDO"] = "fillet", ["F"] = "fillet", ["FILLET"] = "fillet",
+    ["DI"] = "measure", ["DIST"] = "measure", ["MISURA"] = "measure", ["MEASURE"] = "measure",
+    ["CA"] = "chain", ["CATENA"] = "chain", ["C"] = "chain", ["CHAIN"] = "chain",
+    ["SEL"] = "select", ["SELEZIONA"] = "select",
+    ["A"] = "arc", ["AR"] = "arc", ["ARCO"] = "arc", ["ARC"] = "arc",
+    ["CE"] = "circle", ["CERCHIO"] = "circle", ["CIRCLE"] = "circle",
+    ["CP"] = "copy", ["CO"] = "copy", ["COPIA"] = "copy", ["COPY"] = "copy",
+    ["MI"] = "mirror", ["SPEC"] = "mirror", ["SPECCHIA"] = "mirror", ["MIRROR"] = "mirror",
+    ["SC"] = "scale", ["SCA"] = "scale", ["SCALA"] = "scale", ["SCALE"] = "scale",
+    ["AL"] = "align", ["ALLINEA"] = "align", ["ALIGN"] = "align",
+    ["SM"] = "chamfer", ["SMUSSO"] = "chamfer", ["SMUSSA"] = "chamfer", ["CHA"] = "chamfer", ["CHAMFER"] = "chamfer",
+    ["OF"] = "offset", ["OFFSET"] = "offset", ["PAR"] = "offset", ["PARALLELA"] = "offset",
+  };
+
+  EditorDocument Doc = new();
+  DotNetObjectReference<Home>? _ref;
+  string Tool = "select";
+  int ToolGroup;
+  static readonly string[] ToolGroupNames = { "Seleziona", "Disegna", "Trasforma", "Rifinisci", "Misura" };
+  string Status = ""; bool StatusIsError;
+  string Cmd = "";
+  string Dx = "0", Dy = "0", RotDeg = "90", ExtendLen = "1", LeadAngle = "45", LeadBeyond = "1", LeadBeyondOut = "1", FixTol = "0.01", FilletR = "0", ExtendBy = "";
+  string ChamferD = "0.5", OffsetD = "1", ScaleK = "25.4";
+  bool MirrorKeep = true, OffsetChain = true;
+  string Depth = "5", Side = "1", Front = "0", Mount = "8", InsertRot = "6", PivotY = "0";
+  string RegionFlank = "", RegionFront = "", RegionDir = "";
+  DxfContent ExportWhat = DxfContent.Deformed;
+  bool Flip, LeadIn = true, LeadOut = true, Flat, KeepConnected = true, Mode3d, Rulings = true;
+  bool SnapsOn = true, Ortho, Polar = true, Grid = true;
+  bool ShowHelp, ShowExport, ShowStart = true;
+  bool ExportAllProfiles = true;
+  string HelpTab = "flusso";
+  Dictionary<string, bool> Snaps = new() { ["end"] = true, ["mid"] = true, ["cen"] = true, ["int"] = true, ["perp"] = true, ["near"] = false, ["orig"] = true };
+  int ActiveStep;
+  static readonly string[] StepNames = { "Disegno", "Profilo XY", "Spoglie UV", "Deforma / esporta" };
+  int HoverId = -1;
+  Vec2? _anchor, _last;
+  (Vec2 Min, Vec2 Max)? _stretchBox;
+  (int Id, Vec2 Click)? _filletFirst, _chamferFirst;
+  Vec2? _arcMid;                        // arc: the second of the three points
+  int? _offsetId;                       // offset: the element picked, waiting for the side
+  double? _lockAngle, _pendingLength;   // line/move/stretch/measure: angle typed after Tab, length typed before it
+  bool _angleEntry;                     // the command line takes an angle (after Tab)
+
+  string ChainTol { get => Doc.ChainTolerance.ToString("0.######", CultureInfo.InvariantCulture); set { var v = Num(value); if (v > 0) Doc.ChainTolerance = v; } }
+  (int Index, Vec2 At, double Gap)? XyGap => Doc.Upper.Count > 0 ? Doc.ChainGap(Doc.Upper) : null;
+
+  /// <summary>The step still to do (0-3), marked in the panel; -1 when everything is done.</summary>
+  int NextStep => Doc.Entities.Count == 0 ? 0
+    : Doc.Upper.Count == 0 || XyGap is not null ? 1
+    : Doc.UvError is not null || Doc.Lower.Count != Doc.Upper.Count ? 2
+    : Doc.Deformed is null ? 3 : -1;
+
+  string Prompt => Mode3d ? "Vista 3D: trascina per ruotare, clic per selezionare — togli il 3D per modificare" : Tool switch
+  {
+    "select" => "Seleziona: clic, Maiusc+clic o finestra · trascina una maniglia blu per spostare un estremo",
+    "chain" => "Catena: clicca un elemento",
+    "line" => _anchor is null ? "Linea: primo punto" : Second("Linea: punto successivo") + " · Invio per finire",
+    "arc" => _anchor is null ? "Arco: punto iniziale" : _arcMid is null ? "Arco: un punto sull'arco" : "Arco: punto finale",
+    "circle" => _anchor is null ? "Cerchio: centro" : "Cerchio: raggio (scrivilo o clicca un punto)",
+    "move" => Doc.Selection.Count == 0 ? "Sposta: seleziona cosa spostare" : _anchor is null ? "Sposta: punto base" : Second("Sposta: destinazione"),
+    "copy" => Doc.Selection.Count == 0 ? "Copia: seleziona cosa copiare" : _anchor is null ? "Copia: punto base" : Second("Copia: destinazione") + " · Esc per finire",
+    "rotate" => Doc.Selection.Count == 0 ? "Ruota: seleziona cosa ruotare" : _anchor is null ? "Ruota: centro" : "Ruota: angolo (scrivi i gradi o clicca)",
+    "mirror" => Doc.Selection.Count == 0 ? "Specchia: seleziona cosa specchiare" : _anchor is null ? $"Specchia{(MirrorKeep ? " (copia)" : "")}: primo punto dell'asse"
+      : _lockAngle is { } ml ? $"Specchia: asse bloccato a {F(ml, "0.###")}° — Invio o clic per specchiare" : "Specchia: secondo punto dell'asse (si blocca ogni 45°; Tab per scrivere l'angolo)",
+    "scale" => Doc.Selection.Count == 0 ? "Scala: seleziona cosa scalare" : _anchor is null ? "Scala: punto che resta fermo" : "Scala: scrivi il fattore e Invio (2 = doppio, 0.5 = metà, 25.4 = da pollici a mm)",
+    "align" => Doc.Selection.Count == 0 ? "Allinea: clicca una linea — tutto il disegno ruota finché è orizzontale o verticale" : "Allinea: clicca una linea — la selezione ruota finché è orizzontale o verticale",
+    "chamfer" => _chamferFirst is null ? $"Smusso {ChamferD}: prima linea, dalla parte da tenere (scrivi la misura, es. 0.5 o 0.5;1)" : $"Smusso {ChamferD}: seconda linea",
+    "offset" => _offsetId is null ? $"Offset di {OffsetD} mm: clicca l'elemento{(OffsetChain ? " (con tutta la sua catena)" : "")} · scrivi un numero per la distanza" : "Offset: clicca dalla parte dove va la copia",
+    "startpt" => "Clicca sul profilo XY il punto da cui deve partire",
+    "stretch" => _stretchBox is null ? "Stira: trascina una finestra attorno agli estremi da spostare" : _anchor is null ? "Stira: punto base" : Second("Stira: destinazione"),
+    "trim" => "Taglia: clicca la parte da togliere",
+    "extend" => TryNum(ExtendBy, out var by) && by != 0
+      ? $"Estendi di {F(by)} mm: clicca vicino all'estremità (0 = fino al prossimo elemento)"
+      : "Estendi: clicca vicino all'estremità — arriva al prossimo elemento · scrivi una lunghezza per allungare di quella misura",
+    "break" => "Spezza: clicca dove dividere",
+    "fillet" => _filletFirst is null ? $"Raccorda R{FilletR}: prima linea, dalla parte da tenere (scrivi un numero per il raggio)" : $"Raccorda R{FilletR}: seconda linea",
+    "measure" => _anchor is null ? "Misura: primo punto" : Second("Misura: secondo punto"),
+    "origin" => "Origine: clicca il punto che diventa (0,0)",
+    "pickxy" => "Clicca il profilo utensile nel disegno",
+    "pickuv" => "Clicca il secondo profilo nel disegno",
+    _ => "",
+  };
+
+  /// <summary>Prompt for the second point of a two-point command: length / angle entry.</summary>
+  string Second(string what) => _angleEntry ? $"{what}: scrivi l'angolo (°) e Invio" + (_pendingLength is { } l ? $" — lunghezza {F(l)}" : "")
+    : _lockAngle is { } la ? $"{what}: bloccato a {F(la, "0.###")}° — scrivi la lunghezza o clicca (Esc sblocca)"
+    : $"{what} — scrivi una lunghezza, Tab per l'angolo";
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+    {
+      _ref = DotNetObjectReference.Create(this);
+      await JS.InvokeVoidAsync("editor.init", "cv", _ref);
+      await PushSnaps();
+      await Push(true);
+    }
+  }
+
+  static double Num(string? s) => double.TryParse(s?.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
+  static bool TryNum(string? s, out double v) => double.TryParse(s?.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+  static string F(double v, string fmt = "0.####") => v.ToString(fmt, CultureInfo.InvariantCulture);
+
+  void PullInputs()
+  {
+    Depth = F(Doc.Depth, "0.###"); Side = F(Doc.SideClearanceDeg, "0.###"); Flip = Doc.FlipMaterial;
+    Front = F(Doc.FrontCorrectionDeg, "0.###"); Mount = F(Doc.MountDeg, "0.###"); InsertRot = F(Doc.InsertRotDeg, "0.###"); PivotY = F(Doc.PivotY, "0.###");
+  }
+
+  async Task Push(bool fit = false)
+  {
+    await JS.InvokeVoidAsync("editor.setScene", Scene.Build(Doc, ActiveStep == 2), fit);
+    StateHasChanged();
+  }
+  void Refresh() => _ = Push();
+  void Say(string text, bool error = false) { Status = text; StatusIsError = error; }
+
+  async Task Run(Action a, bool fit = false)
+  {
+    Say("");
+    try { a(); }
+    catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException or KeyNotFoundException or NotSupportedException)
+    { Say(ex.Message, true); Doc.Log.Add("errore: " + ex.Message); }
+    await Push(fit);
+  }
+
+  bool Uploading;
+  async Task OnFile(InputFileChangeEventArgs e)
+  {
+    if (Uploading) { Say("Attendi il completamento del caricamento in corso.", true); return; }
+    if (e.FileCount != 1)
+    {
+      Say("Apri un file DXF alla volta.", true);
+      return;
+    }
+    if (!e.File.Name.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase))
+    {
+      Say("Formato non supportato. Apri un file DXF (.dxf).", true);
+      return;
+    }
+    if (e.File.Size > Settings.MaxUploadBytes)
+    {
+      Say($"File troppo grande. La dimensione massima consentita è {Settings.MaxUploadMB} MB.", true);
+      return;
+    }
+    Uploading = true;
+    try
+    {
+      // Never persist uploads: the bounded browser stream and DXF stay in RAM.
+      using var ms = new MemoryStream();
+      await using var stream = e.File.OpenReadStream(Settings.MaxUploadBytes);
+      await stream.CopyToAsync(ms);
+      var text = System.Text.Encoding.Latin1.GetString(ms.GetBuffer(), 0, checked((int)ms.Length));
+      Doc.LoadDxf(e.File.Name, text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray());
+      PullInputs(); Say(Doc.Upper.Count > 0 ? "Profili trovati nel file — controlla i passi 3 e 4" : "Passo 2: scegli il profilo, o prima sistema il disegno");
+      ShowStart = false;
+      ActiveStep = Doc.Upper.Count > 0 ? 2 : 1;
+    }
+    catch (Exception ex) { Say($"{e.File.Name}: {ex.Message}", true); Doc.Log.Add("errore: " + ex.Message); }
+    finally { Uploading = false; }
+    await SetTool("select");
+    await Push(true);
+  }
+
+  /// <summary>Start page → an empty sheet with the origin in the middle, ready to draw.</summary>
+  async Task StartBlank()
+  {
+    ActiveStep = 0;
+    ShowStart = false;
+    Say("Foglio nuovo: l'origine (0,0) è al centro. Disegna il profilo (Linea L, Arco A, Raccorda R…), poi passo 2: Scegli il profilo.");
+    await SetTool("line");
+    await Push(true);
+  }
+
+  /// <summary>Back to the start page; the drawing is cleared (Annulla brings it back).</summary>
+  async Task NewDrawing()
+  {
+    if (Mode3d) await Toggle3d();
+    if (Doc.Entities.Count > 0) { Doc.Clear(); Doc.Log.Add("Nuovo disegno (Annulla riporta quello di prima)"); }
+    Doc.FileName = null; Doc.Selection.Clear();
+    ActiveStep = 0;
+    ShowStart = true; ShowExport = false; Say("");
+    await SetTool("select");
+    await Push(true);
+  }
+
+  async Task ToOrigin()
+  {
+    (string What, bool Moved) r = ("", false);
+    await Run(() => r = Doc.ProfileToOrigin(), fit: true);
+    if (!StatusIsError) Say(r.Moved ? $"Portato all'origine {r.What}: il punto più a sinistra è a X0, il più alto a Y0" : $"{char.ToUpper(r.What[0])}{r.What[1..]} è già all'origine");
+  }
+
+  // ------------------------------------------------------------------ tools and input from the canvas
+  async Task SetTool(string t)
+  {
+    var group = Array.FindIndex(Tools, tools => tools.Any(tool => tool.Key == t));
+    if (group >= 0) ToolGroup = group;
+    Tool = t; _stretchBox = null; _filletFirst = null; _chamferFirst = null; _arcMid = null; _offsetId = null; ShowExport = false;
+    await SetAnchor(null);
+    await JS.InvokeVoidAsync("editor.setTool", t, "");
+    if (t == "pickuv" || t == "pickxy") await SelectStep(t == "pickxy" ? 1 : 2);
+  }
+  async Task SetAnchor(Vec2? p)
+  {
+    _anchor = p; if (p is not null) _last = p;
+    _lockAngle = null; _pendingLength = null; _angleEntry = false;
+    await JS.InvokeVoidAsync("editor.setAnchor", p is { } q ? new[] { q.X, q.Y } : null);
+  }
+  async Task PushSnaps() => await JS.InvokeVoidAsync("editor.setSnaps", new { on = SnapsOn, ortho = Ortho, polar = Polar, grid = Grid, end = Snaps["end"], mid = Snaps["mid"], cen = Snaps["cen"], @int = Snaps["int"], perp = Snaps["perp"], near = Snaps["near"], orig = Snaps["orig"] });
+
+  /// <summary>Lock the next segment to an angle; a length typed before Tab places the point straight away.</summary>
+  async Task LockAngle(double deg)
+  {
+    _angleEntry = false; _lockAngle = deg;
+    await JS.InvokeVoidAsync("editor.setLock", deg);
+    if (_pendingLength is { } len && _anchor is { } a)
+    {
+      _pendingLength = null;
+      var p = a + Vec2.FromPolar(len, deg * Math.PI / 180);
+      await OnPoint(p.X, p.Y, true, Tool);
+    }
+    StateHasChanged();
+  }
+
+  /// <summary>Tab in the drawing or the command line: switch between typing the length and the angle of the segment.</summary>
+  [JSInvokable] public async Task OnTab(string text)
+  {
+    Cmd = "";
+    if (_anchor is null || Tool is not ("line" or "move" or "copy" or "mirror" or "stretch" or "measure")) { Say("Tab serve a scrivere l'angolo del prossimo tratto: prima metti il suo primo punto"); StateHasChanged(); return; }
+    if (_angleEntry)
+    {
+      if (TryNum(text, out var a)) { await LockAngle(a); return; }
+      _angleEntry = false;
+    }
+    else
+    {
+      if (TryNum(text, out var len)) _pendingLength = len;
+      _angleEntry = true;
+    }
+    StateHasChanged();
+  }
+  async Task ToggleSnap(string k) { Snaps[k] = !Snaps[k]; await PushSnaps(); }
+
+  [JSInvokable] public async Task OnPick(int id, bool shift, bool ctrl, string tool)
+  {
+    if (id >= 0 && !shift && Doc.ProfileContaining(id) is { } owner && owner.Id != Doc.ActiveProfile.Id)
+    {
+      Doc.ActivateProfile(owner.Id); PullInputs();
+      RegionFlank = RegionFront = RegionDir = "";
+    }
+    if (id < 0) { if (!shift) Doc.Selection.Clear(); }
+    else if (tool == "chain") Doc.SelectChain(id, shift);
+    else Doc.Select(new[] { id }, additive: false, toggle: shift);
+    await Push();
+    if (id >= 0 && ActiveStep == 2 && Doc.Upper.Contains(id)) await JS.InvokeVoidAsync("editor.reveal", $"row-{id}");
+  }
+  [JSInvokable] public async Task OnBoxSelect(int[] ids, bool additive) { Doc.Select(ids, additive: additive); await Push(); }
+
+  [JSInvokable] public async Task OnEntityClick(int id, double x, double y, string tool)
+  {
+    var p = new Vec2(x, y);
+    switch (tool)
+    {
+      case "chain": await OnPick(id, false, false, "chain"); break;
+      case "trim": await Run(() => Doc.Trim(id, p)); break;
+      case "extend":
+        if (TryNum(ExtendBy, out var by) && by != 0) await Run(() => Doc.ExtendBy(id, p, by));
+        else await Run(() => Doc.Extend(id, p));
+        break;
+      case "break": await Run(() => Doc.Break(id, p)); break;
+      case "fillet":
+        if (_filletFirst is null) { _filletFirst = (id, p); Doc.Select(new[] { id }); await Push(); }
+        else { var (a, pa) = _filletFirst.Value; _filletFirst = null; Doc.Selection.Clear(); await Run(() => Doc.Fillet(a, pa, id, p, Num(FilletR))); }
+        break;
+      case "chamfer":
+        if (_chamferFirst is null) { _chamferFirst = (id, p); Doc.Select(new[] { id }); await Push(); }
+        else
+        {
+          var (a, pa) = _chamferFirst.Value; _chamferFirst = null; Doc.Selection.Clear();
+          if (TryChamfer(ChamferD, out var c1, out var c2)) await Run(() => Doc.Chamfer(a, pa, id, p, c1, c2));
+          else { Say($"Misura dello smusso '{ChamferD}' non capita: scrivi per esempio 0.5 oppure 0.5;1", true); await Push(); }
+        }
+        break;
+      case "offset":
+        _offsetId = id;
+        if (OffsetChain) Doc.SelectChain(id); else Doc.Select(new[] { id });
+        await JS.InvokeVoidAsync("editor.setTool", "offset", "side");
+        await Push();
+        break;
+      case "align":
+        double turned = 0;
+        await Run(() => turned = Doc.AlignToAxis(id));
+        if (!StatusIsError) Say($"Ruotato di {F(turned, "0.####")}°: la linea ora è {(Doc.Get(id)?.Element is LineSeg al && Math.Abs(al.P1.Y - al.P0.Y) < 1e-9 ? "orizzontale" : "verticale")}");
+        break;
+      case "startpt":
+        if (!Doc.Upper.Contains(id)) { Say("Clicca sul profilo XY (arancione)", true); break; }
+        await Run(() => Doc.SetStartPoint(p));
+        if (!StatusIsError) { Say("Il profilo XY ora parte da qui (la freccia indica il verso)"); await SetTool("select"); await Push(); }
+        break;
+      case "pickxy":
+        await Run(() => Doc.PickUpper(id), fit: false);
+        if (!StatusIsError) { Say($"Profilo utensile: {Doc.Upper.Count} elementi. Passo 3: controlla le spoglie."); Doc.Selection.Clear(); ActiveStep = 2; await SetTool("select"); await Push(); }
+        break;
+      case "pickuv":
+        await Run(() => Doc.PickLower(id));
+        if (!StatusIsError) { Say("Secondo profilo scelto: i suoi angoli sono misurati nel passo 3."); Doc.Selection.Clear(); await SetTool("select"); await Push(); }
+        break;
+    }
+  }
+
+  [JSInvokable] public async Task OnPoint(double x, double y, bool snapped, string tool)
+  {
+    var p = new Vec2(x, y);
+    switch (Tool)
+    {
+      case "origin":
+        await Run(() => Doc.PointToOrigin(p), fit: true);
+        if (!StatusIsError) Say($"Origine messa nel punto che era {p}");
+        await SetTool("select");
+        break;
+      case "line":
+        if (_anchor is { } a0) { await Run(() => Doc.AddLine(a0, p)); if (!StatusIsError) await SetAnchor(p); }
+        else await SetAnchor(p);
+        break;
+      case "arc":
+        if (_anchor is not { } s0a) await SetAnchor(p);
+        else if (_arcMid is not { } am)
+        {
+          if (p.AlmostEquals(s0a, 1e-9)) break;
+          _arcMid = p; _lockAngle = null; await JS.InvokeVoidAsync("editor.setArcMid", new[] { p.X, p.Y });
+        }
+        else
+        {
+          _arcMid = null; await JS.InvokeVoidAsync("editor.setArcMid", null);
+          await SetAnchor(null); _last = p;
+          await Run(() => Doc.AddArc(s0a, am, p));
+        }
+        break;
+      case "circle":
+        if (_anchor is { } cc) { await SetAnchor(null); _last = cc; await Run(() => Doc.AddCircle(cc, p.DistanceTo(cc))); }
+        else await SetAnchor(p);
+        break;
+      case "move":
+        if (Doc.Selection.Count == 0) break;
+        if (_anchor is { } b) { await SetAnchor(null); var d = p - b; await Run(() => MoveSel(d)); if (!StatusIsError) Say($"Spostato di {d}"); }
+        else await SetAnchor(p);
+        break;
+      case "copy":
+        if (Doc.Selection.Count == 0) break;
+        if (_anchor is { } cb)
+        {
+          var d = p - cb;
+          await Run(() => Doc.CopySelected(d));
+          if (!StatusIsError) Say($"Copiato di {d} — clicca per un'altra copia, Esc per finire");
+          await SetAnchor(cb);
+        }
+        else await SetAnchor(p);
+        break;
+      case "mirror":
+        if (Doc.Selection.Count == 0) break;
+        if (_anchor is { } ma) await MirrorAxis(ma, p);
+        else await SetAnchor(p);
+        break;
+      case "scale":
+        if (Doc.Selection.Count == 0) break;
+        if (_anchor is null) await SetAnchor(p);
+        else Say("Scrivi il fattore di scala e Invio (2 = doppio, 0.5 = metà)", true);
+        break;
+      case "offset":
+        if (_offsetId is not { } oid) break;
+        _offsetId = null;
+        await JS.InvokeVoidAsync("editor.setTool", "offset", "");
+        await Run(() => Doc.Offset(oid, p, Num(OffsetD), OffsetChain));
+        if (!StatusIsError) Say($"Offset di {OffsetD} mm fatto (selezionato) — clicca un altro elemento o Esc");
+        break;
+      case "rotate":
+        if (Doc.Selection.Count == 0) break;
+        if (_anchor is { } c) { await SetAnchor(null); await RotateBy(c, (p - c).Angle * 180 / Math.PI); }
+        else await SetAnchor(p);
+        break;
+      case "stretch":
+        if (_stretchBox is not { } box) break;
+        if (_anchor is { } s0)
+        {
+          await SetAnchor(null); _stretchBox = null;
+          await Run(() => Doc.Stretch(box.Min, box.Max, p - s0));
+          await JS.InvokeVoidAsync("editor.setTool", "stretch", "");
+        }
+        else await SetAnchor(p);
+        break;
+      case "measure":
+        if (_anchor is { } m0)
+        {
+          var dd = p - m0;
+          Say($"Distanza {F(dd.Length)} · ΔX {F(dd.X)} · ΔY {F(dd.Y)} · angolo {F(dd.Angle * 180 / Math.PI, "0.###")}°");
+          Doc.Log.Add($"Misura {m0} → {p}: " + Status);
+          await SetAnchor(null);
+        }
+        else await SetAnchor(p);
+        break;
+    }
+    StateHasChanged();
+  }
+
+  async Task RotateBy(Vec2 centre, double deg)
+  {
+    await Run(() => Doc.RotateSelected(centre, deg));
+    if (!StatusIsError) Say($"Ruotato di {F(deg, "0.###")}° attorno a {centre}");
+  }
+
+  async Task MirrorAxis(Vec2 a, Vec2 b)
+  {
+    await SetAnchor(null);
+    await Run(() => Doc.MirrorSelected(a, b, MirrorKeep));
+    PullInputs();
+    if (!StatusIsError) Say(MirrorKeep ? "Copia specchiata fatta (selezionata)" : "Specchiato");
+  }
+
+  Task MirrorProfile() => Run(() => { Doc.MirrorProfile(); PullInputs(); Say("Profilo specchiato: destro ↔ sinistro"); });
+
+  /// <summary>"0.5" = the same on both lines, "0.5;1" (or "0.5 1") = first line, second line.</summary>
+  static bool TryChamfer(string? text, out double d1, out double d2)
+  {
+    d1 = d2 = 0;
+    var parts = (text ?? "").Split(new[] { ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+    if (parts.Length is < 1 or > 2 || !TryNum(parts[0], out d1)) return false;
+    d2 = d1;
+    return parts.Length == 1 || TryNum(parts[1], out d2);
+  }
+
+  [JSInvokable] public async Task OnStretchBox(double x0, double y0, double x1, double y1)
+  {
+    _stretchBox = (new Vec2(x0, y0), new Vec2(x1, y1));
+    await JS.InvokeVoidAsync("editor.setTool", "stretch", "points");
+    StateHasChanged();
+  }
+
+  [JSInvokable] public async Task OnGrip(int id, double fx, double fy, double tx, double ty)
+  {
+    var from = new Vec2(fx, fy); var to = new Vec2(tx, ty);
+    await Run(() => { if (KeepConnected) Doc.MoveVertex(from, to); else Doc.MoveEndpoint(id, from, to); });
+  }
+
+  [JSInvokable] public async Task OnKey(string key)
+  {
+    switch (key)
+    {
+      case "Escape":
+        if (ShowHelp || ShowExport) { ShowHelp = false; ShowExport = false; StateHasChanged(); return; }
+        if (_lockAngle is not null || _angleEntry) { _lockAngle = null; _angleEntry = false; _pendingLength = null; await JS.InvokeVoidAsync("editor.setLock", null); }
+        else if (_anchor is not null || _stretchBox is not null || _filletFirst is not null || _chamferFirst is not null || _offsetId is not null) { await SetTool(Tool); }
+        else if (Tool != "select") await SetTool("select");
+        else Doc.Selection.Clear();
+        Say("");
+        break;
+      case "Help": ShowHelp = !ShowHelp; StateHasChanged(); return;
+      case "Enter":
+        if (Tool is "line" or "measure" or "copy") await SetAnchor(null);
+        else if (Tool == "mirror" && _anchor is { } ma && _lockAngle is { } ml) await MirrorAxis(ma, ma + Vec2.FromPolar(1, ml * Math.PI / 180));
+        break;
+      case "Delete": await Run(Doc.DeleteSelected); return;
+      case "Undo": Doc.Undo(); PullInputs(); break;
+      case "Redo": Doc.Redo(); PullInputs(); break;
+      case "SelectAll": Doc.SelectAll(); break;
+      case "Ortho": Ortho = !Ortho; await PushSnaps(); Say(Ortho ? "Orto acceso" : "Orto spento"); break;
+      case "Polar": Polar = !Polar; await PushSnaps(); Say(Polar ? "Polare acceso: le linee si bloccano ogni 45°" : "Polare spento"); break;
+      case "Snap": SnapsOn = !SnapsOn; await PushSnaps(); Say(SnapsOn ? "Snap ad oggetto acceso" : "Snap ad oggetto spento"); break;
+      case "Grid":
+        if (Mode3d) return;
+        Grid = !Grid; await PushSnaps(); Say(Grid ? "Griglia 2D visibile" : "Griglia 2D nascosta"); break;
+      default:
+        if (key.StartsWith("tool:") && !Mode3d) await SetTool(key[5..]);
+        break;
+    }
+    await Push();
+  }
+
+  // ------------------------------------------------------------------ the command line
+  async Task CmdKey(KeyboardEventArgs e)
+  {
+    if (e.Key == "Escape") { Cmd = ""; await JS.InvokeVoidAsync("editor.blurCommand"); await OnKey("Escape"); return; }
+    if (e.Key != "Enter") return;
+    var text = Cmd.Trim(); Cmd = "";
+    await ExecCommand(text);
+  }
+
+  async Task ExecCommand(string text)
+  {
+    if (text.Length == 0) { await OnKey("Enter"); return; }
+    if (_angleEntry && TryNum(text, out var typedAngle)) { await LockAngle(typedAngle); return; }
+    if (text.StartsWith('<') && _anchor is not null && TryNum(text[1..], out var lockTo)) { await LockAngle(lockTo); return; }
+    if (Aliases.TryGetValue(text, out var t)) { await SetTool(t); return; }
+    if (text.Equals("U", StringComparison.OrdinalIgnoreCase) || text.Equals("ANNULLA", StringComparison.OrdinalIgnoreCase)) { await OnKey("Undo"); return; }
+    if (Tool == "fillet" && TryNum(text, out var r)) { FilletR = F(r); Say($"Raggio di raccordo {F(r)}"); return; }
+    if (Tool == "chamfer" && TryChamfer(text, out var c1, out var c2)) { ChamferD = c1 == c2 ? F(c1) : $"{F(c1)};{F(c2)}"; Say($"Smusso {ChamferD} mm"); return; }
+    if (Tool == "offset" && TryNum(text, out var od)) { OffsetD = F(od); Say($"Offset di {F(od)} mm"); return; }
+    if (Tool == "extend" && TryNum(text, out var ext)) { ExtendBy = ext == 0 ? "" : F(ext); Say(ext == 0 ? "Estendi fino al prossimo elemento" : $"Estendi di {F(ext)} mm a ogni clic"); return; }
+    if (Tool == "rotate" && _anchor is { } c && TryNum(text, out var ang)) { await SetAnchor(null); await RotateBy(c, ang); return; }
+    if (Tool == "scale" && _anchor is { } sb && TryNum(text, out var k))
+    {
+      await SetAnchor(null);
+      await Run(() => Doc.ScaleSelected(sb, k));
+      if (!StatusIsError) Say($"Scalato ×{F(k, "0.######")} attorno a {sb}");
+      return;
+    }
+    if (Tool == "circle" && _anchor is { } cc && TryNum(text, out var rad)) { await SetAnchor(null); _last = cc; await Run(() => Doc.AddCircle(cc, rad)); return; }
+    var p = await ParsePoint(text);
+    if (p is null) { Say($"'{text}' non capito: x,y · @dx,dy · @lunghezza<angolo · una lunghezza · o un comando (L, A, CE, SP, CP, RU, MI, SC, ST, TA, ES, SPE, RA, SM, OF, DI)", true); return; }
+    if (Tool is "line" or "arc" or "circle" or "move" or "copy" or "rotate" or "mirror" or "scale" or "stretch" or "measure" or "origin") await OnPoint(p.Value.X, p.Value.Y, true, Tool);
+    else Say("I punti scritti servono a Linea, Arco, Cerchio, Sposta, Copia, Ruota, Specchia, Scala, Stira, Misura e Origine", true);
+  }
+
+  /// <summary>x,y (or x;y with decimal commas) · @dx,dy relative · @len&lt;angle polar · a single length along the locked angle or the cursor direction.</summary>
+  async Task<Vec2?> ParsePoint(string text)
+  {
+    bool rel = text.StartsWith('@'); if (rel) text = text[1..];
+    var basePt = _anchor ?? _last ?? Vec2.Zero;
+    int lt = text.IndexOf('<');
+    if (lt > 0 && TryNum(text[..lt], out var len) && TryNum(text[(lt + 1)..], out var deg))
+      return (rel ? basePt : Vec2.Zero) + Vec2.FromPolar(len, deg * Math.PI / 180);
+    var parts = text.Contains(';') ? text.Split(';') : text.Split(',');
+    if (parts.Length == 2 && TryNum(parts[0], out var x) && TryNum(parts[1], out var y))
+      return (rel ? basePt : Vec2.Zero) + new Vec2(x, y);
+    if (!rel && _anchor is { } a && TryNum(text, out var dist))
+    {
+      if (_lockAngle is { } la) return a + Vec2.FromPolar(dist, la * Math.PI / 180);
+      var cur = await JS.InvokeAsync<double[]?>("editor.cursor");
+      if (cur is null) return null;
+      var dir = new Vec2(cur[0], cur[1]) - a;
+      return dir.Length < 1e-12 ? null : a + dir.Normalized() * dist;
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------------ panel actions
+  void MoveSel(Vec2 d)
+  {
+    bool inProfile = Doc.Selection.Any(id => Doc.Upper.Contains(id) || Doc.Lower.Contains(id));
+    if (KeepConnected && inProfile) Doc.MoveSelectedConnected(d); else Doc.MoveSelected(d);
+  }
+
+  async Task EditEnd(int id, bool start, object? xs, object? ys)
+  {
+    if (Doc.Get(id)?.Element is not LineSeg l) return;
+    var old = start ? l.P0 : l.P1;
+    var to = new Vec2(xs is null ? old.X : Num(xs.ToString()), ys is null ? old.Y : Num(ys.ToString()));
+    await Run(() => { if (KeepConnected) Doc.MoveVertex(old, to); else Doc.MoveEndpoint(id, old, to); });
+  }
+
+  async Task Toggle3d() { Mode3d = !Mode3d; if (Mode3d) await SetTool("select"); await JS.InvokeVoidAsync("editor.setMode3d", Mode3d); }
+  async Task SelectStep(int step)
+  {
+    if (step < 0 || step >= StepNames.Length || step == ActiveStep) return;
+    ActiveStep = step;
+    HoverId = -1;
+    await JS.InvokeVoidAsync("editor.highlight", -1);
+    await Push();
+  }
+
+  void ToggleLayer(string layer, bool visible) { if (visible) Doc.HiddenLayers.Remove(layer); else Doc.HiddenLayers.Add(layer); Refresh(); }
+  Task Delete() => Run(Doc.DeleteSelected);
+  Task Isolate() => Run(Doc.IsolateSelected, fit: true);
+  Task Undo() => Run(() => { Doc.Undo(); PullInputs(); });
+  Task Redo() => Run(() => { Doc.Redo(); PullInputs(); });
+  async Task SetUpper() { await Run(Doc.SetUpperFromSelection); if (!StatusIsError) await SelectStep(2); }
+  async Task SetLower() { await Run(Doc.SetLowerFromSelection); if (!StatusIsError) await SelectStep(2); }
+  Task AddLeads() => Run(() => Doc.AddLeads(Num(LeadBeyond), Num(LeadAngle), LeadIn, LeadOut, Num(LeadBeyondOut)));
+
+  /// <summary>The XY edges in the selection (rows of the relief table).</summary>
+  List<ReliefRow> SelectedEdges() => Doc.Relief.Where(r => Doc.Selection.Contains(r.Id)).ToList();
+  Task ApplyRegion() => Run(() => Doc.SetRelief(SelectedEdges().Select(r => r.Id),
+    string.IsNullOrEmpty(RegionDir) ? null : Enum.Parse<ReliefDir>(RegionDir), EdgeOverride.ParseAngle(RegionFlank), EdgeOverride.ParseAngle(RegionFront)));
+  async Task PickRow(int id, bool shift)
+  {
+    Doc.Select(new[] { id }, toggle: shift);
+    await Push();
+  }
+  Task Fix() => Run(() => Say(Doc.FixDrawing(Math.Max(Num(FixTol), 1e-9)).ToString()));
+  Task SetOverride(int id, string? text) => Run(() => Doc.SetReliefOverride(id, text));
+  Task SetDirection(int id, string? dir) => Run(() => Doc.SetReliefDirection(id, string.IsNullOrEmpty(dir) ? null : Enum.Parse<ReliefDir>(dir)));
+  Task SetNormal(bool normal) => Run(() => Doc.ReliefNormal = normal);
+  static string DirMark(ReliefDir d) => d switch { ReliefDir.Horizontal => "→", ReliefDir.Vertical => "↓", _ => "⊥" };
+  Task Deform() => Run(() => Doc.Deform());
+  Task DeformAllProfiles() => Run(() =>
+  {
+    Doc.DeformAll();
+    var warnings = Doc.Profiles.Where(p => p.Deformed!.Warnings.Count > 0).Select(p => p.Name).ToList();
+    Say($"Calcolati tutti i {Doc.Profiles.Count} profili con le rispettive impostazioni." +
+      (warnings.Count > 0 ? $" Controlla gli avvisi di {string.Join(", ", warnings)} nel passo 4 o nel registro." : ""));
+  });
+
+  async Task AddProfile()
+  {
+    Doc.AddProfile(); PullInputs();
+    Say($"{Doc.ActiveProfile.Name}: clicca una nuova catena nel disegno. Le impostazioni degli altri profili restano memorizzate.");
+    await SetTool("pickxy"); await Push();
+  }
+  async Task ChangeProfile(ChangeEventArgs e)
+  {
+    if (!int.TryParse(e.Value?.ToString(), out var id)) return;
+    Doc.ActivateProfile(id); PullInputs();
+    RegionFlank = RegionFront = RegionDir = "";
+    await SetTool("select"); await Push();
+    Say($"Stai modificando {Doc.ActiveProfile.Name}. Spoglie e montaggio valgono solo per questo profilo.");
+  }
+  async Task RemoveProfile()
+  {
+    await Run(() => { Doc.RemoveActiveProfile(); PullInputs(); });
+    if (!StatusIsError) { await SetTool("select"); await Push(); }
+  }
+
+  Task ApplyRelief() => Run(() =>
+  {
+    if (Num(Depth) <= 0) throw new InvalidOperationException("La profondità UV deve essere positiva");
+    Doc.Depth = Num(Depth); Doc.FrontCorrectionDeg = Num(Front); Doc.SideClearanceDeg = Num(Side); Doc.FlipMaterial = Flip;
+  });
+  Task ApplyMounting() => Run(() => { Doc.MountDeg = Num(Mount); Doc.InsertRotDeg = Num(InsertRot); Doc.PivotY = Num(PivotY); });
+
+  /// <summary>"Y +0.1746 mm (8° → 6°)" next to the front correction.</summary>
+  string FrontText() => Math.Abs(Doc.FrontCorrectionDeg) < 1e-12 ? "nessuna"
+    : $"Y {(Doc.FrontShift.Y >= 0 ? "+" : "")}{F(Doc.FrontShift.Y)} mm ({F(Doc.MountDeg, "0.##")}° → {F(Doc.MountDeg + Doc.FrontCorrectionDeg, "0.##")}°)";
+
+  /// <summary>"frontale −2°, laterale 1° (7)" — what the second profile gives, set or measured.</summary>
+  string ReliefSummary()
+  {
+    var flank = Doc.Relief.Where(r => r.Auto.Kind == EdgeKind.Flank)
+                          .Select(r => Doc.UvMode == UvSource.Drawn ? r.Measured?.In(r.Effective.Dir) : r.Effective.AngleDeg)
+                          .Where(a => a is not null).Select(a => Math.Round(a!.Value, 2)).ToList();
+    string sides = string.Join(", ", flank.GroupBy(a => a).OrderByDescending(g => g.Count()).Select(g => $"{F(g.Key, "0.##")}° ({g.Count()})"));
+    double front = Doc.UvMode == UvSource.Drawn ? Doc.MeasuredFrontDeg ?? 0 : Doc.FrontCorrectionDeg;
+    return $"{(Doc.UvMode == UvSource.Drawn ? "disegnato, " : "")}frontale {F(front, "0.##")}°, laterale {(sides.Length > 0 ? sides : "nessuna")}";
+  }
+
+  async Task HighlightRow(int id)
+  {
+    HoverId = id;
+    await JS.InvokeVoidAsync("editor.highlight", id);
+  }
+
+  Task ExportAs(DxfContent what) { ExportWhat = what; ShowExport = false; return Export(); }
+  async Task Export()
+  {
+    string suffix = ExportWhat switch { DxfContent.Deformed => "_DEF", DxfContent.Undeformed => "_NOM", _ => "_DEF_NOM" };
+    string what = ExportWhat switch { DxfContent.Deformed => "profili deformati", DxfContent.Undeformed => "profili non deformati", _ => "profili deformati e non deformati" };
+    try { var dxf = ExportAllProfiles ? Doc.ExportAllDxf(ExportWhat, Flat) : Doc.ExportDxf(ExportWhat, Flat); await JS.InvokeVoidAsync("editor.download", (Path.GetFileNameWithoutExtension(Doc.FileName) ?? "profilo") + suffix + ".dxf", dxf); Say($"Esportati i {what}: {(ExportAllProfiles ? $"{Doc.Profiles.Count} profili" : Doc.ActiveProfile.Name)} ({suffix[1..]}.dxf)"); }
+    catch (Exception ex) { Say(ex.Message, true); }
+    await Push();
+  }
+  async Task ExportDrawing()
+  {
+    try { var dxf = Doc.ExportDrawingDxf(); await JS.InvokeVoidAsync("editor.download", (Path.GetFileNameWithoutExtension(Doc.FileName) ?? "disegno") + "_EDIT.dxf", dxf); }
+    catch (Exception ex) { Say(ex.Message, true); }
+  }
+
+  public void Dispose() => _ref?.Dispose();
+}

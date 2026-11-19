@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FormaWire.Core/FormaWire.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Keep the web assets in every publish output, including folder publishes. -->
+    <Content Update="wwwroot/**/*" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="VerifyPublishedWebAssets" AfterTargets="Publish">
+    <ItemGroup>
+      <RequiredPublishedWebAsset Include="$(PublishDir)wwwroot/app.css;$(PublishDir)wwwroot/editor.js;$(PublishDir)wwwroot/hosting.js;$(PublishDir)wwwroot/favicon.ico" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(RequiredPublishedWebAsset.Identity)')"
+           Text="FormaWire publish is incomplete: missing %(RequiredPublishedWebAsset.Identity). Deploy the complete output including wwwroot." />
+  </Target>
+
+</Project>

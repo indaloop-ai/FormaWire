@@ -1,0 +1,11 @@
+@page "/error"
+@inject FormaWire.Web.Hosting.WebSettings Settings
+
+<PageTitle>Errore · FormaWire</PageTitle>
+<main class="service-page">
+    <span class="eyebrow">FORMAWIRE</span>
+    <h1>Qualcosa non ha funzionato</h1>
+    <p>Non è stato possibile completare la richiesta. Riprova tra poco.</p>
+    <a class="btn primary" href="@Settings.BaseHref" data-enhance-nav="false">Torna a FormaWire</a>
+    <BrandFooter />
+</main>

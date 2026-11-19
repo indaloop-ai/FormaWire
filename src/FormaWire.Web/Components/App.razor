@@ -1,0 +1,24 @@
+@inject FormaWire.Web.Hosting.AssetVersioner Assets
+@inject FormaWire.Web.Hosting.WebSettings Settings
+
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="@Settings.BaseHref" />
+    <link rel="icon" href="@Assets.GetUrl("favicon.ico")" />
+    <link rel="stylesheet" href="@Assets.GetUrl("app.css")" />
+    <HeadOutlet />
+</head>
+<body>
+    <Routes />
+    <div id="blazor-error-ui" role="alert" data-nosnippet>
+        La sessione è stata interrotta. Ricarica la pagina per riprovare; le modifiche non salvate potrebbero andare perse.
+        <a href="@Settings.BaseHref" class="reload" data-enhance-nav="false">Ricarica</a>
+    </div>
+    <script src="@Assets.GetUrl("hosting.js")"></script>
+    <script src="@Assets.GetUrl("editor.js")"></script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>
