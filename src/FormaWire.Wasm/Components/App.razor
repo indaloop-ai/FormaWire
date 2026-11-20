@@ -1,0 +1,17 @@
+@* Cloudflare Pages answers unknown paths with index.html, so the router handles them. *@
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <PageTitle>Pagina non trovata · FormaWire</PageTitle>
+        <main class="service-page">
+            <span class="eyebrow">FORMAWIRE</span>
+            <h1>Pagina non trovata</h1>
+            <p>L'indirizzo aperto non esiste.</p>
+            <a class="btn primary" href="./">Torna a FormaWire</a>
+            <BrandFooter />
+        </main>
+    </NotFound>
+</Router>

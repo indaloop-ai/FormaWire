@@ -28,6 +28,22 @@ La **Guida** integrata, accessibile anche con **F1**, descrive gli strumenti e i
 
 L'editor accetta file **DXF** con linee, archi, cerchi, polilinee ed ellissi. Quote, tratteggi, testi e blocchi non vengono importati. Il limite predefinito è **20 MB per file**.
 
-I disegni caricati vengono elaborati in memoria sul server; l'applicazione non li salva su disco. Usa **Salva** per scaricare il disegno con le impostazioni dei profili e poterlo riaprire in seguito. **Esporta** scarica invece i profili scelti per il flusso di lavorazione.
+Nella versione server i disegni caricati vengono elaborati in memoria sul server, che non li salva su disco. Nella versione WebAssembly vengono elaborati direttamente nel browser e non lasciano mai il computer dell'utente. Usa **Salva** per scaricare il disegno con le impostazioni dei profili e poterlo riaprire in seguito. **Esporta** scarica invece i profili scelti per il flusso di lavorazione.
+
+## Versione WebAssembly (Cloudflare Pages)
+
+`src/FormaWire.Wasm` pubblica l'editor come sito statico: l'editor gira nel browser e non serve alcun server. Il codice dell'editor resta in `src/FormaWire.Web` ed è condiviso da entrambe le versioni.
+
+```sh
+dotnet publish src/FormaWire.Wasm -c Release -o publish/wasm
+npx wrangler pages deploy publish/wasm/wwwroot --project-name formawire
+```
+
+Al primo accesso il browser scarica l'editor (circa 3 MB compressi) mentre una schermata di caricamento ne mostra l'avanzamento; dalle visite successive l'avvio è quasi immediato.
+
+- Il sito è pensato per la radice del dominio. Per pubblicarlo sotto un percorso, ad esempio `/formawire/`, modifica `<base href>` in `src/FormaWire.Wasm/wwwroot/index.html`.
+- Per far compilare il sito a Cloudflare Pages da Git, l'ambiente di build deve installare .NET. Comando di build: `curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh && bash dotnet-install.sh --channel 8.0 --install-dir .dotnet && .dotnet/dotnet publish src/FormaWire.Wasm -c Release -o publish/wasm`; cartella di output: `publish/wasm/wwwroot`.
+- Disattiva Rocket Loader per il dominio: riordina gli script di avvio dell'editor.
+- È l'unico progetto che scarica pacchetti da nuget.org (il runtime WebAssembly di Microsoft); vedi `src/FormaWire.Wasm/nuget.config`.
 
 FormaWire è un progetto di **MadTools S.r.l. / MadNetAI**.

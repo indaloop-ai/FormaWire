@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!--
+    Static, browser-only build of the editor for Cloudflare Pages: the editor runs in
+    WebAssembly and drawings never leave the user's machine.
+    The editor itself lives in FormaWire.Web and is compiled into this project as linked
+    files below; edit it there. Only the browser host (startup, index.html, loading
+    screen, router) belongs to this project.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>FormaWire.Web</RootNamespace>
+    <!-- Cloudflare compresses on the fly and never serves precompressed .br/.gz copies. -->
+    <BlazorEnableCompression>false</BlazorEnableCompression>
+    <CompressionEnabled>false</CompressionEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.20" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.20" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FormaWire.Core/FormaWire.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <SharedWeb>../FormaWire.Web/</SharedWeb>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(SharedWeb)Scene.cs" Link="Scene.cs" />
+    <RazorComponent Include="$(SharedWeb)Components/Pages/Home.razor" Link="Components/Pages/Home.razor" />
+    <RazorComponent Include="$(SharedWeb)Components/HelpFigure.razor" Link="Components/HelpFigure.razor" />
+    <RazorComponent Include="$(SharedWeb)Components/Icon.razor" Link="Components/Icon.razor" />
+    <RazorComponent Include="$(SharedWeb)Components/BrandFooter.razor" Link="Components/BrandFooter.razor" />
+    <Content Include="$(SharedWeb)wwwroot/app.css;$(SharedWeb)wwwroot/editor.js;$(SharedWeb)wwwroot/favicon.ico"
+             Link="wwwroot/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- The SDK files every static asset under this project's wwwroot. Publishing copies the
+       linked files fine, but the development server (dotnet run) would look for them there and
+       answer 404, so point them back at the folder they really live in. -->
+  <Target Name="ServeSharedWebAssetsFromSource" AfterTargets="ResolveProjectStaticWebAssets">
+    <PropertyGroup>
+      <_SharedWebRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)$(SharedWeb)wwwroot'))\</_SharedWebRoot>
+    </PropertyGroup>
+    <ItemGroup>
+      <StaticWebAsset Condition="'%(StaticWebAsset.RootDir)%(StaticWebAsset.Directory)' == '$(_SharedWebRoot)'">
+        <ContentRoot>$(_SharedWebRoot)</ContentRoot>
+      </StaticWebAsset>
+    </ItemGroup>
+  </Target>
+
+</Project>
