@@ -18,7 +18,7 @@
 
   <Target Name="VerifyPublishedWebAssets" AfterTargets="Publish">
     <ItemGroup>
-      <RequiredPublishedWebAsset Include="$(PublishDir)wwwroot/app.css;$(PublishDir)wwwroot/editor.js;$(PublishDir)wwwroot/hosting.js;$(PublishDir)wwwroot/favicon.ico" />
+      <RequiredPublishedWebAsset Include="$(PublishDir)wwwroot/indaloop-tema.css;$(PublishDir)wwwroot/app.css;$(PublishDir)wwwroot/editor.js;$(PublishDir)wwwroot/hosting.js;$(PublishDir)wwwroot/favicon.svg;$(PublishDir)wwwroot/logo/indaloop-logo-scuro.svg" />
     </ItemGroup>
     <Error Condition="!Exists('%(RequiredPublishedWebAsset.Identity)')"
            Text="FormaWire publish is incomplete: missing %(RequiredPublishedWebAsset.Identity). Deploy the complete output including wwwroot." />

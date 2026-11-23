@@ -13,7 +13,7 @@
 <div class="app">
   <div class="editor-shell" inert="@(ShowStart || ShowHelp)">
   <header class="app-header">
-    <div class="brand"><span class="brand-mark"><Icon Name="brand" /></span><span>FormaWire<small>STUDIO PROFILI</small></span></div>
+    <Brand />
   <div class="toolbar" aria-label="File e cronologia">
     <button class="btn" @onclick="NewDrawing" title="Nuovo disegno (Annulla recupera il precedente)"><Icon Name="new" />Nuovo</button>
     <label class="btn file" title="Apri un disegno DXF"><Icon Name="open" />Apri file<InputFile OnChange="OnFile" accept=".dxf,.DXF" aria-label="Apri file DXF" /></label>
@@ -413,7 +413,7 @@
     <div class="start" inert="@ShowHelp">
       <div class="start-card">
         <div class="start-head">
-          <div class="brand"><span class="brand-mark"><Icon Name="brand" /></span><span>FormaWire<small>STUDIO PROFILI</small></span></div>
+          <Brand />
           <button class="btn quiet" @onclick="() => ShowHelp = true" title="Come funziona [F1]"><Icon Name="help" />Guida rapida</button>
         </div>
         <div class="start-intro"><span class="eyebrow">PRECISIONE, UN PASSO ALLA VOLTA</span><h1>Dal disegno.<br />Al profilo da tagliare.</h1><p>Prepara i profili XY e UV, definisci le spoglie e calcola la deformazione per l’elettroerosione a filo.</p></div>
@@ -428,7 +428,7 @@
         </label>
         <div class="blank-choice"><span class="choice-icon"><Icon Name="new" /></span><h2>Parti da un foglio vuoto</h2><p>Disegna con linee, archi e raccordi.<br />Ogni misura, sotto controllo.</p><button class="btn" @onclick="StartBlank">Inizia da zero<Icon Name="arrow" /></button><span class="file-types">STRUMENTI CAD INTEGRATI</span></div>
         </div>
-        <p class="legal-notice">Usando FormaWire accetti i <a href="@(Settings.SiteUrl + "/formawire-termini")" target="_blank" rel="noopener noreferrer">Termini d'uso</a> · <a href="@(Settings.SiteUrl + "/privacy")" target="_blank" rel="noopener noreferrer">Privacy</a></p>
+        <p class="legal-notice">@if (Settings.ProcessesInBrowser) { <text>I disegni vengono elaborati nel tuo browser e non lasciano mai il tuo computer. </text> }Usando FormaWire accetti i <a href="@Settings.TermsUrl" target="_blank" rel="noopener">Termini d'uso</a> · <a href="@Settings.PrivacyUrl" target="_blank" rel="noopener">Privacy</a></p>
         @if (StatusIsError && Status.Length > 0) { <div role="alert" class="warn start-err">@Status</div> }
         <div class="start-flow">
           <span><b>01</b> Importa o disegna</span><Icon Name="chevron" /><span><b>02</b> Scegli il profilo XY</span><Icon Name="chevron" /><span><b>03</b> Definisci le spoglie</span><Icon Name="chevron" /><span><b>04</b> Deforma ed esporta</span>

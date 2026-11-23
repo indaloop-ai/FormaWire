@@ -7,7 +7,7 @@
       @for (int i = 0; i < 4; i++)
       {
         var x = 8 + i * 160;
-        <rect class="figure-panel" x="@x" y="4" width="144" height="110" rx="6" />
+        <rect class="figure-panel" x="@x" y="4" width="144" height="110" />
         <g><text class="title" x="@(x + 8)" y="19">@Steps[i]</text></g>
         @if (i < 3) { <polygon class="arrow" points="@(x + 147),55 @(x + 156),59 @(x + 147),63" /> }
       }

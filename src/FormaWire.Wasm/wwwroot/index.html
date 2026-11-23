@@ -1,26 +1,27 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="it" data-tema="scuro">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FormaWire · Studio profili</title>
     <!-- Served from the site root. To serve beneath a path, e.g. /formawire/, change this to "/formawire/". -->
     <base href="/" />
-    <link rel="icon" href="favicon.ico" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="indaloop-tema.css" />
     <link rel="stylesheet" href="app.css" />
     <style>
         /* Loading screen, shown until the editor replaces the content of #app. Blazor sets
            --blazor-load-percentage(-text) on <html> while it downloads its files. */
-        .boot { min-height:100vh; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; padding:24px 16px; text-align:center; animation:boot-in .25s ease .15s both; }
-        .boot-bar { width:min(320px, 100%); height:6px; border-radius:3px; background:var(--control); border:1px solid var(--line); overflow:hidden; }
-        .boot-bar span { display:block; height:100%; width:var(--blazor-load-percentage, 0%); background:var(--primary); border-radius:3px; transition:width .2s ease; }
-        .boot-status { margin:0; color:var(--text-secondary); font-size:13px; }
-        .boot-status span::after { content:var(--blazor-load-percentage-text, ""); margin-left:4px; color:var(--muted); font-variant-numeric:tabular-nums; }
-        .boot-note, .boot-error { display:none; max-width:420px; margin:0; color:var(--muted); line-height:1.6; }
+        .boot { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; padding:24px 16px; text-align:center; animation:boot-in .25s ease .15s both; }
+        .boot-bar { width:min(320px, 100%); height:4px; background:var(--il-linea); overflow:hidden; }
+        .boot-bar span { display:block; height:100%; width:var(--blazor-load-percentage, 0%); background:var(--il-accento); transition:width .2s ease; }
+        .boot-status { margin:0; color:var(--il-attenuato); font:500 11px var(--il-font-etichette); letter-spacing:.12em; text-transform:uppercase; }
+        .boot-status span::after { content:var(--blazor-load-percentage-text, ""); margin-left:8px; color:var(--il-testo); font-variant-numeric:tabular-nums; }
+        .boot-note, .boot-error { display:none; max-width:420px; margin:0; color:var(--il-attenuato); line-height:1.6; }
         .boot.first .boot-note { display:block; }
         .boot.failed .boot-bar, .boot.failed .boot-status, .boot.failed .boot-note { display:none; }
-        .boot.failed .boot-error { display:block; color:var(--text-secondary); }
-        .boot-error .btn { margin-top:14px; }
+        .boot.failed .boot-error { display:block; color:var(--il-testo-2); }
+        .boot-error .btn { margin-top:16px; }
         @keyframes boot-in { from { opacity:0; } to { opacity:1; } }
         @media (prefers-reduced-motion:reduce) { .boot { animation:none; } }
     </style>
@@ -28,13 +29,15 @@
 <body>
     <div id="app">
         <main class="boot" aria-busy="true">
+            <!-- Same markup as Components/Brand.razor in FormaWire.Web. -->
             <div class="brand">
-                <span class="brand-mark"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16L15 12l5 6H4l5-6-5-6Z M9 12h6" /></svg></span>
-                <span>FormaWire<small>STUDIO PROFILI</small></span>
+                <img class="brand-logo" src="logo/indaloop-logo-scuro.svg" alt="indaloop" width="94" height="24" />
+                <span class="brand-sep" aria-hidden="true"></span>
+                <span class="brand-name">FormaWire<small>Studio profili</small></span>
             </div>
             <div class="boot-bar" aria-hidden="true"><span></span></div>
             <p class="boot-status" role="status">Caricamento dell'editor<span></span></p>
-            <p class="boot-note">Primo avvio: il browser scarica l'editor (circa 3 MB). Dalla prossima volta resta in memoria e si apre in un attimo.</p>
+            <p class="boot-note">Primo avvio: il browser scarica l'editor (circa 3 MB). Dalla prossima volta resta in memoria e si apre in un attimo. I tuoi disegni non lasciano mai il tuo computer.</p>
             <div class="boot-error" role="alert">
                 FormaWire non è riuscito ad avviarsi. Controlla la connessione e ricarica la pagina; serve una versione recente di Chrome, Edge, Firefox o Safari.
                 <br /><a class="btn primary" href="./">Ricarica</a>

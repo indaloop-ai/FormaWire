@@ -22,6 +22,14 @@ window.editor = (function () {
   let snap = null;                                  // {x, y, kind} under the cursor
   let hotGrip = null;                               // grip clicked without dragging: the next click is its destination
   let frame = 0;
+  // Interface colours and fonts of the canvas, read from the page theme (app.css / indaloop-tema.css) in init().
+  // Drawing colours (profiles, axes, selection, snaps) are technical and stay fixed below.
+  const T = { canvas: "#0e0e0d", gridMinor: "#1b1b19", gridMajor: "#2a2926", overlay: "rgba(14,14,13,.88)", text: "#f8f3ec", muted: "#a19d94", mono: "'IBM Plex Mono', ui-monospace, monospace", sans: "Inter, system-ui, sans-serif" };
+  function readTheme() {
+    const css = getComputedStyle(document.documentElement), v = name => css.getPropertyValue(name).trim();
+    T.canvas = v("--canvas") || T.canvas; T.text = v("--il-testo") || T.text; T.muted = v("--il-attenuato") || T.muted;
+    T.mono = v("--il-font-etichette") || T.mono; T.sans = v("--il-font-testo") || T.sans;
+  }
   const PICK_PX = 7, SNAP_PX = 12, GRIP_PX = 6;
   const POINT_TOOLS = new Set(["line", "arc", "circle", "move", "copy", "rotate", "mirror", "scale", "stretch", "measure", "origin"]);
   const ENTITY_TOOLS = new Set(["chain", "trim", "extend", "break", "fillet", "chamfer", "offset", "align", "startpt", "pickxy", "pickuv"]);
@@ -41,6 +49,8 @@ window.editor = (function () {
 
   function init(canvasId, ref) {
     canvas = document.getElementById(canvasId); ctx = canvas.getContext("2d"); dotnet = ref;
+    readTheme();
+    if (document.fonts) document.fonts.ready.then(requestDraw);   // labels drawn before the fonts arrived
     const ro = new ResizeObserver(() => { resize(); draw(); });
     ro.observe(canvas.parentElement);
     resize();
@@ -173,14 +183,14 @@ window.editor = (function () {
   function draw() {
     if (!ctx) return;
     const W = canvas.width, H = canvas.height;
-    ctx.fillStyle = "#100d16"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = T.canvas; ctx.fillRect(0, 0, W, H);
     ctx.lineWidth = 1;
     if (mode3d) {
       // axes triad at origin
       const o = toScreen([0, 0], 0);
       const ax = toScreen([5, 0], 0), ay = toScreen([0, 5], 0), az = proj3(0, 0, 5);
       ctx.strokeStyle = "#a04040"; line(o, ax); ctx.strokeStyle = "#40a040"; line(o, ay); ctx.strokeStyle = "#4060c0"; line(o, az);
-      ctx.fillStyle = "#b2abbf"; ctx.font = "11px sans-serif"; ctx.fillText("X", ax[0] + 4, ax[1]); ctx.fillText("Y", ay[0] + 4, ay[1]); ctx.fillText("Z", az[0] + 4, az[1]);
+      ctx.fillStyle = T.muted; ctx.font = "11px " + T.mono; ctx.fillText("X", ax[0] + 4, ax[1]); ctx.fillText("Y", ay[0] + 4, ay[1]); ctx.fillText("Z", az[0] + 4, az[1]);
       if (showRulings) {
         for (const pr of scene.pairs) {
           ctx.strokeStyle = pr.color; ctx.lineWidth = 0.6;
@@ -225,7 +235,7 @@ window.editor = (function () {
       ctx.strokeRect(Math.min(drag.x0, drag.x1), Math.min(drag.y0, drag.y1), Math.abs(drag.x1 - drag.x0), Math.abs(drag.y1 - drag.y0));
       ctx.setLineDash([]);
     }
-    ctx.fillStyle = "#b2abbf"; ctx.font = "12px sans-serif";
+    ctx.fillStyle = T.muted; ctx.font = "12px " + T.sans;
     ctx.fillText(mode3d ? `3D  rotazione ${(rot.yaw * 180 / Math.PI).toFixed(0)}°  inclinazione ${(rot.pitch * 180 / Math.PI).toFixed(0)}°  — trascina: ruota, destro: sposta, rotella: zoom, clic: seleziona` : (osnap.grid ? `griglia ${+gridStep().toPrecision(3)} mm · ` : "") + `${(100 / view.scale).toFixed(3)} mm / 100 px`, 8, H - 8);
   }
   // grid: the smallest 1-2-5 step at least 14 px wide, every 10 mm-ish line a little brighter
@@ -241,11 +251,11 @@ window.editor = (function () {
     ctx.lineWidth = 1;
     for (let i = Math.ceil(x0 / s); i <= Math.floor(x1 / s); i++) {
       const sx = Math.round(i * s * view.scale + view.ox) + 0.5;
-      ctx.strokeStyle = i % every === 0 ? "#292235" : "#1c1726"; line([sx, 0], [sx, H]);
+      ctx.strokeStyle = i % every === 0 ? T.gridMajor : T.gridMinor; line([sx, 0], [sx, H]);
     }
     for (let j = Math.ceil(y0 / s); j <= Math.floor(y1 / s); j++) {
       const sy = Math.round(-j * s * view.scale + view.oy) + 0.5;
-      ctx.strokeStyle = j % every === 0 ? "#292235" : "#1c1726"; line([0, sy], [W, sy]);
+      ctx.strokeStyle = j % every === 0 ? T.gridMajor : T.gridMinor; line([0, sy], [W, sy]);
     }
   }
   // the origin: X arrow (red), Y arrow (green), a square on 0,0
@@ -257,7 +267,7 @@ window.editor = (function () {
     ctx.strokeStyle = ctx.fillStyle = "#5ac05a"; line(o, [o[0], o[1] - L]);
     ctx.beginPath(); ctx.moveTo(o[0], o[1] - L - 6); ctx.lineTo(o[0] - 4, o[1] - L); ctx.lineTo(o[0] + 4, o[1] - L); ctx.closePath(); ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "#ddd"; ctx.strokeRect(o[0] - 3.5, o[1] - 3.5, 7, 7);
-    ctx.font = "10px sans-serif"; ctx.fillStyle = "#e05a5a"; ctx.fillText("X", o[0] + L + 8, o[1] + 4);
+    ctx.font = "10px " + T.mono; ctx.fillStyle = "#e05a5a"; ctx.fillText("X", o[0] + L + 8, o[1] + 4);
     ctx.fillStyle = "#5ac05a"; ctx.fillText("Y", o[0] + 6, o[1] - L - 2);
   }
   function line(a, b) { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
@@ -283,7 +293,7 @@ window.editor = (function () {
   }
   function drawLabels() {
     if (!scene.labels.length) return;
-    ctx.font = "11px ui-monospace, monospace";
+    ctx.font = "11px " + T.mono;
     // the highlighted edge first, then the others where they do not cover one already drawn (zoom in to see all)
     const placed = [];
     const order = scene.labels.filter(l => l.id === highlightId).concat(scene.labels.filter(l => l.id !== highlightId));
@@ -292,7 +302,7 @@ window.editor = (function () {
       const w = ctx.measureText(l.t).width + 6, box = [s[0] - w / 2, s[1] - 16, w, 14];
       if (placed.some(b => box[0] < b[0] + b[2] && b[0] < box[0] + box[2] && box[1] < b[1] + b[3] && b[1] < box[1] + box[3])) continue;
       placed.push(box);
-      ctx.fillStyle = l.id === highlightId ? "rgba(90,30,90,.9)" : "rgba(16,13,22,.85)"; ctx.fillRect(box[0], box[1], box[2], box[3]);
+      ctx.fillStyle = l.id === highlightId ? "rgba(90,30,90,.9)" : T.overlay; ctx.fillRect(box[0], box[1], box[2], box[3]);
       ctx.fillStyle = l.c; ctx.fillText(l.t, box[0] + 3, s[1] - 5);
     }
   }
@@ -351,10 +361,10 @@ window.editor = (function () {
       : tool === "circle" ? `R ${len.toFixed(4)}  Ø ${(2 * len).toFixed(4)}`
       : tool === "mirror" ? `asse <${deg.toFixed(2)}°`
       : `${len.toFixed(4)}  <${deg.toFixed(2)}°   Δ ${dx.toFixed(4)}, ${dy.toFixed(4)}`) + how;
-    ctx.font = "11px ui-monospace, monospace";
+    ctx.font = "11px " + T.mono;
     const w = ctx.measureText(txt).width + 8;
-    ctx.fillStyle = "rgba(16,13,22,.9)"; ctx.fillRect(sc[0] + 14, sc[1] + 10, w, 16);
-    ctx.fillStyle = "#d5bcff"; ctx.fillText(txt, sc[0] + 18, sc[1] + 22);
+    ctx.fillStyle = T.overlay; ctx.fillRect(sc[0] + 14, sc[1] + 10, w, 16);
+    ctx.fillStyle = T.text; ctx.fillText(txt, sc[0] + 18, sc[1] + 22);
   }
   function circlePts(c, r, a0, sweep) {
     const n = Math.max(8, Math.ceil(Math.abs(sweep) * 180 / Math.PI / 3)), pts = [];
@@ -388,7 +398,7 @@ window.editor = (function () {
       case "near": ctx.moveTo(s[0] - r, s[1] - r); ctx.lineTo(s[0] + r, s[1] - r); ctx.lineTo(s[0] - r, s[1] + r); ctx.lineTo(s[0] + r, s[1] + r); ctx.closePath(); break;
     }
     ctx.stroke();
-    ctx.font = "11px sans-serif"; ctx.fillStyle = "#7bed9f"; ctx.fillText(SNAP_NAMES[snap.kind], s[0] + 10, s[1] - 8);
+    ctx.font = "11px " + T.mono; ctx.fillStyle = "#7bed9f"; ctx.fillText(SNAP_NAMES[snap.kind], s[0] + 10, s[1] - 8);
   }
 
   // ---- picking

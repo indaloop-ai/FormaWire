@@ -2,12 +2,13 @@
 @inject FormaWire.Web.Hosting.WebSettings Settings
 
 <!DOCTYPE html>
-<html lang="it">
+<html lang="it" data-tema="scuro">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="@Settings.BaseHref" />
-    <link rel="icon" href="@Assets.GetUrl("favicon.ico")" />
+    <link rel="icon" href="@Assets.GetUrl("favicon.svg")" type="image/svg+xml" />
+    <link rel="stylesheet" href="@Assets.GetUrl("indaloop-tema.css")" />
     <link rel="stylesheet" href="@Assets.GetUrl("app.css")" />
     <HeadOutlet />
 </head>

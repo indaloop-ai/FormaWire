@@ -36,8 +36,10 @@
     <RazorComponent Include="$(SharedWeb)Components/HelpFigure.razor" Link="Components/HelpFigure.razor" />
     <RazorComponent Include="$(SharedWeb)Components/Icon.razor" Link="Components/Icon.razor" />
     <RazorComponent Include="$(SharedWeb)Components/BrandFooter.razor" Link="Components/BrandFooter.razor" />
-    <Content Include="$(SharedWeb)wwwroot/app.css;$(SharedWeb)wwwroot/editor.js;$(SharedWeb)wwwroot/favicon.ico"
-             Link="wwwroot/%(Filename)%(Extension)" />
+    <RazorComponent Include="$(SharedWeb)Components/Brand.razor" Link="Components/Brand.razor" />
+    <!-- Every shared web asset (styles, theme, fonts, logos, favicon) except the server-only script. -->
+    <Content Include="$(SharedWeb)wwwroot/**" Exclude="$(SharedWeb)wwwroot/hosting.js"
+             Link="wwwroot/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- The SDK files every static asset under this project's wwwroot. Publishing copies the
@@ -48,7 +50,7 @@
       <_SharedWebRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)$(SharedWeb)wwwroot'))\</_SharedWebRoot>
     </PropertyGroup>
     <ItemGroup>
-      <StaticWebAsset Condition="'%(StaticWebAsset.RootDir)%(StaticWebAsset.Directory)' == '$(_SharedWebRoot)'">
+      <StaticWebAsset Condition="$([System.String]::Copy('%(StaticWebAsset.Identity)').StartsWith('$(_SharedWebRoot)'))">
         <ContentRoot>$(_SharedWebRoot)</ContentRoot>
       </StaticWebAsset>
     </ItemGroup>

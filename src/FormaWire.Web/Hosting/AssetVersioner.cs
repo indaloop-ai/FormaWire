@@ -6,7 +6,7 @@ namespace FormaWire.Web.Hosting;
 public sealed class AssetVersioner(IWebHostEnvironment environment, ILogger<AssetVersioner> logger)
 {
     public static IReadOnlyList<string> RequiredFiles { get; } =
-        Array.AsReadOnly(new[] { "app.css", "editor.js", "hosting.js", "favicon.ico" });
+        Array.AsReadOnly(new[] { "indaloop-tema.css", "app.css", "editor.js", "hosting.js", "favicon.svg" });
 
     // GetOrAdd may run its factory more than once. Only the winning Lazy is
     // evaluated, so concurrent requests hash (or warn about) a file just once.

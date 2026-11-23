@@ -67,7 +67,7 @@ app.UseStaticFiles(new StaticFileOptions
     OnPrepareResponse = context =>
     {
         // Revalidate assets even when opened through an older, unversioned page.
-        if (context.File.Name is "app.css" or "editor.js" or "hosting.js" or "favicon.ico")
+        if (context.File.Name is "indaloop-tema.css" or "app.css" or "editor.js" or "hosting.js" or "favicon.svg")
             context.Context.Response.Headers.CacheControl = "no-cache";
     }
 });

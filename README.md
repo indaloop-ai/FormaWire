@@ -2,8 +2,6 @@
 
 FormaWire è un editor CAD nel browser per preparare e deformare i profili delle placchette da lavorare con l'elettroerosione a filo. Dal disegno nominale ricava i profili XY e UV tenendo conto delle spoglie e degli angoli di montaggio dell'utensile.
 
-**[Apri FormaWire](https://madnetai.com/formawire/)**
-
 ## Funzionalità
 
 - **Importazione DXF** o creazione di un disegno da zero con gli strumenti CAD integrati.
@@ -44,6 +42,11 @@ Al primo accesso il browser scarica l'editor (circa 3 MB compressi) mentre una s
 - Il sito è pensato per la radice del dominio. Per pubblicarlo sotto un percorso, ad esempio `/formawire/`, modifica `<base href>` in `src/FormaWire.Wasm/wwwroot/index.html`.
 - Per far compilare il sito a Cloudflare Pages da Git, l'ambiente di build deve installare .NET. Comando di build: `curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh && bash dotnet-install.sh --channel 8.0 --install-dir .dotnet && .dotnet/dotnet publish src/FormaWire.Wasm -c Release -o publish/wasm`; cartella di output: `publish/wasm/wwwroot`.
 - Disattiva Rocket Loader per il dominio: riordina gli script di avvio dell'editor.
+- I [Termini d'uso](src/FormaWire.Wasm/wwwroot/termini.html) e l'[informativa sulla privacy](src/FormaWire.Wasm/wwwroot/privacy.html) di questa versione sono pagine statiche del sito. L'informativa dichiara che nessun dato dei disegni lascia il browser, che non ci sono cookie né strumenti di analisi e che Cloudflare non ci invia registri. Se attivi su Cloudflare Web Analytics, Zaraz, Logpush o altri servizi che raccolgono dati dei visitatori, aggiorna prima l'informativa.
 - È l'unico progetto che scarica pacchetti da nuget.org (il runtime WebAssembly di Microsoft); vedi `src/FormaWire.Wasm/nuget.config`.
 
-FormaWire è un progetto di **MadTools S.r.l. / MadNetAI**.
+## Tema grafico
+
+L'interfaccia usa il tema **indaloop**, versione scura. `src/FormaWire.Web/wwwroot/indaloop-tema.css`, i caratteri in `fonts/` (licenza SIL OFL) e i loghi in `logo/` sono copiati senza modifiche dal pacchetto del tema: per aggiornarlo basta sostituirli. `app.css` applica il tema all'editor. I colori tecnici del disegno (profili XY e UV, assi, risultato) non cambiano.
+
+FormaWire è un progetto **indaloop** di **MadTools S.r.l.** · [indaloop.ai](https://indaloop.ai)
