@@ -3,13 +3,19 @@
 {
   "name": "formawire",
   "compatibility_date": "2026-11-01",
+  // The editor lives at indaloop.ai/formawire; the rest of indaloop.ai is not touched.
+  // Keep in step with SITE_PATH in cloudflare-build.sh.
+  "routes": [
+    { "pattern": "indaloop.ai/formawire", "zone_name": "indaloop.ai" },
+    { "pattern": "indaloop.ai/formawire/*", "zone_name": "indaloop.ai" }
+  ],
   "assets": {
-    "directory": "./publish/wasm/wwwroot",
-    // Any unknown address loads index.html and the editor's router answers it (404 page).
-    // Without a Worker script this includes missing files: a broken deploy still ends on the
-    // loading screen's error message, because the editor fails to start.
-    "not_found_handling": "single-page-application",
-    // privacy.html is also served as /privacy, termini.html as /termini.
+    "directory": "./publish/site",
+    // Unknown addresses under /formawire/ get formawire/404.html, a copy of the editor
+    // whose router shows the 404 page. Missing files also answer 404, so a broken
+    // deploy ends on the loading screen's error message.
+    "not_found_handling": "404-page",
+    // /formawire redirects to /formawire/; privacy.html is also served as /formawire/privacy.
     "html_handling": "auto-trailing-slash"
   },
   // No request logs: the privacy policy says Cloudflare sends us none.

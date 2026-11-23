@@ -1,4 +1,4 @@
-@* Cloudflare answers unknown paths with index.html, so the router handles them. *@
+@* Cloudflare answers unknown paths with a copy of index.html (404.html), so the router handles them. *@
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
         <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
