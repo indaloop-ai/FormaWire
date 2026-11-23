@@ -11,7 +11,7 @@ public sealed class WebSettings
     public long MaxUploadBytes => MaxUploadMB * 1024L * 1024L;
     public string SiteHost => new Uri(SiteUrl).Host;
     // Static pages next to index.html (wwwroot/termini.html, wwwroot/privacy.html): readable
-    // without starting the editor. Cloudflare Pages also serves them as /termini and /privacy.
+    // without starting the editor. Cloudflare also serves them as /termini and /privacy.
     public string TermsUrl => "termini.html";
     public string PrivacyUrl => "privacy.html";
     /// <summary>True when drawings are processed in the browser and never sent anywhere.</summary>

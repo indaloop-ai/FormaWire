@@ -1,0 +1,17 @@
+// Cloudflare Worker that serves the static WebAssembly build (see cloudflare-build.sh).
+// There is no Worker script: Cloudflare serves the files directly.
+{
+  "name": "formawire",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./publish/wasm/wwwroot",
+    // Any unknown address loads index.html and the editor's router answers it (404 page).
+    // Without a Worker script this includes missing files: a broken deploy still ends on the
+    // loading screen's error message, because the editor fails to start.
+    "not_found_handling": "single-page-application",
+    // privacy.html is also served as /privacy, termini.html as /termini.
+    "html_handling": "auto-trailing-slash"
+  },
+  // No request logs: the privacy policy says Cloudflare sends us none.
+  "observability": { "enabled": false }
+}

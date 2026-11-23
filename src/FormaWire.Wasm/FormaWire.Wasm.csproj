@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
 
   <!--
-    Static, browser-only build of the editor for Cloudflare Pages: the editor runs in
+    Static, browser-only build of the editor, served by a Cloudflare Worker (wrangler.jsonc): the editor runs in
     WebAssembly and drawings never leave the user's machine.
     The editor itself lives in FormaWire.Web and is compiled into this project as linked
     files below; edit it there. Only the browser host (startup, index.html, loading

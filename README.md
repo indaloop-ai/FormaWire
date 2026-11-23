@@ -28,21 +28,36 @@ L'editor accetta file **DXF** con linee, archi, cerchi, polilinee ed ellissi. Qu
 
 Nella versione server i disegni caricati vengono elaborati in memoria sul server, che non li salva su disco. Nella versione WebAssembly vengono elaborati direttamente nel browser e non lasciano mai il computer dell'utente. Usa **Salva** per scaricare il disegno con le impostazioni dei profili e poterlo riaprire in seguito. **Esporta** scarica invece i profili scelti per il flusso di lavorazione.
 
-## Versione WebAssembly (Cloudflare Pages)
+## Versione WebAssembly (Cloudflare Workers)
 
-`src/FormaWire.Wasm` pubblica l'editor come sito statico: l'editor gira nel browser e non serve alcun server. Il codice dell'editor resta in `src/FormaWire.Web` ed è condiviso da entrambe le versioni.
-
-```sh
-dotnet publish src/FormaWire.Wasm -c Release -o publish/wasm
-npx wrangler pages deploy publish/wasm/wwwroot --project-name formawire
-```
+`src/FormaWire.Wasm` pubblica l'editor come sito statico: l'editor gira nel browser in WebAssembly e non serve alcun server. Il codice dell'editor resta in `src/FormaWire.Web` ed è condiviso da entrambe le versioni. Il sito è servito da un Worker Cloudflare senza codice, che distribuisce soltanto i file: la configurazione è in [`wrangler.jsonc`](wrangler.jsonc).
 
 Al primo accesso il browser scarica l'editor (circa 3 MB compressi) mentre una schermata di caricamento ne mostra l'avanzamento; dalle visite successive l'avvio è quasi immediato.
 
+### Pubblicazione automatica da GitHub
+
+1. Nel pannello Cloudflare apri **Workers & Pages → Create → Workers → Import a repository** e collega il repository GitHub.
+2. Imposta il progetto:
+   - **Project name**: `formawire`, lo stesso `name` di `wrangler.jsonc`;
+   - **Build command**: `bash cloudflare-build.sh`;
+   - **Deploy command**: `npx wrangler deploy`;
+   - **Root directory**: lasciala vuota (radice del repository).
+3. Salva e avvia: ogni push su `main` ricompila e pubblica il sito. `cloudflare-build.sh` installa .NET 8, assente nell'ambiente di build di Cloudflare, e compila il sito in `publish/wasm/wwwroot`. La prima build richiede qualche minuto in più.
+4. In **Settings → Domains & Routes** aggiungi il dominio personalizzato, per esempio `formawire.indaloop.ai`.
+5. Nelle impostazioni del dominio disattiva **Rocket Loader**: riordina gli script di avvio dell'editor.
+
+Per le anteprime dei branch diversi da `main` puoi attivare **Builds for non-production branches** con il comando `npx wrangler versions upload`.
+
+### Pubblicazione manuale
+
+```sh
+bash cloudflare-build.sh
+npx wrangler deploy
+```
+
 - Il sito è pensato per la radice del dominio. Per pubblicarlo sotto un percorso, ad esempio `/formawire/`, modifica `<base href>` in `src/FormaWire.Wasm/wwwroot/index.html`.
-- Per far compilare il sito a Cloudflare Pages da Git, l'ambiente di build deve installare .NET. Comando di build: `curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh && bash dotnet-install.sh --channel 8.0 --install-dir .dotnet && .dotnet/dotnet publish src/FormaWire.Wasm -c Release -o publish/wasm`; cartella di output: `publish/wasm/wwwroot`.
-- Disattiva Rocket Loader per il dominio: riordina gli script di avvio dell'editor.
-- I [Termini d'uso](src/FormaWire.Wasm/wwwroot/termini.html) e l'[informativa sulla privacy](src/FormaWire.Wasm/wwwroot/privacy.html) di questa versione sono pagine statiche del sito. L'informativa dichiara che nessun dato dei disegni lascia il browser, che non ci sono cookie né strumenti di analisi e che Cloudflare non ci invia registri. Se attivi su Cloudflare Web Analytics, Zaraz, Logpush o altri servizi che raccolgono dati dei visitatori, aggiorna prima l'informativa.
+- Gli indirizzi sconosciuti caricano l'editor, che mostra la pagina 404. `privacy.html` e `termini.html` sono disponibili anche come `/privacy` e `/termini`.
+- I [Termini d'uso](src/FormaWire.Wasm/wwwroot/termini.html) e l'[informativa sulla privacy](src/FormaWire.Wasm/wwwroot/privacy.html) di questa versione sono pagine statiche del sito. L'informativa dichiara che nessun dato dei disegni lascia il browser, che non ci sono cookie né strumenti di analisi e che Cloudflare non ci invia registri. Per questo `wrangler.jsonc` tiene disattivati i registri del Worker (`observability`). Se attivi su Cloudflare Workers Logs, Web Analytics, Zaraz, Logpush o altri servizi che raccolgono dati dei visitatori, aggiorna prima l'informativa.
 - È l'unico progetto che scarica pacchetti da nuget.org (il runtime WebAssembly di Microsoft); vedi `src/FormaWire.Wasm/nuget.config`.
 
 ## Tema grafico

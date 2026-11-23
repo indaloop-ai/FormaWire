@@ -47,3 +47,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Cloudflare build: SDK installed by cloudflare-build.sh, Wrangler state
+/.dotnet/
+/.dotnet-install.sh
+.wrangler/
